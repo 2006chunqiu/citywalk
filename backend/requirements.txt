@@ -1,6 +1,12 @@
-fastapi>=0.115
-uvicorn[standard]>=0.30
-httpx>=0.27
-pydantic>=2.8
-python-dotenv>=1.0
-pytest>=8.0
+# 锁定版本，避免 pip 回溯解析（不锁版本时 pip 解析可能卡几分钟），
+# 同时保证六个人装出来的环境完全一致。
+#
+# 注意：刻意不用 uvicorn[standard]——它会多拉 watchfiles、httptools、
+# websockets 等需要编译的包，Windows 上安装慢且容易失败。
+# 纯 uvicorn 足够开发使用，--reload 会自动退化为轮询实现。
+fastapi==0.115.6
+uvicorn==0.32.1
+httpx==0.28.1
+pydantic==2.10.4
+python-dotenv==1.0.1
+pytest==8.3.4

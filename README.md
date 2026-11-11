@@ -64,6 +64,19 @@ python -m pytest tests/ -q
 python tests/test_scoring.py
 ```
 
+**装依赖很慢或卡住怎么办**
+
+国内直连 PyPI 经常卡在“Collecting”。用清华镜像，实测 17 秒装完：
+
+```powershell
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+两点说明：
+
+- `requirements.txt` 里**锁了版本**。不锁版本时 pip 会反复回溯解析，可能卡几分钟；锁了之后大家装出来的环境也完全一致。
+- 刻意**不用 `uvicorn[standard]`**。加上它会多拉 watchfiles、httptools、websockets 这些要编译的包，Windows 上又慢又容易失败。纯 uvicorn 够开发用，`--reload` 会自动换成轮询实现。
+
 **当前状态**
 
 - 前端可独立运行：默认 `VITE_MOCK=true`，用 `src/mock/route.json` 的假数据，不依赖后端
