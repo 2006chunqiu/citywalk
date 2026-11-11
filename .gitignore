@@ -17,6 +17,10 @@ venv/
 *.egg-info/
 .pytest_cache/
 
+# pip 安装过程中可能在当前目录留下的临时解包目录与轮子文件
+pip-unpack-*/
+*.whl
+
 # 数据（种子库本身要提交，生成的数据库文件不提交）
 *.db
 *.sqlite3
