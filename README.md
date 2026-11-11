@@ -21,15 +21,55 @@ citywalk/
 └─ .env.example       环境变量模板（真实 .env 不进仓库）
 ```
 
-## 本地启动（待补：各自开发到能跑通时填这里）
+## 本地启动
 
-```
+**第一次（前后端各一次）**
+
+```powershell
+# 复制环境变量模板，填自己的高德 Key（.env 不会进仓库）
+Copy-Item .env.example .env
+
 # 前端
-cd frontend && npm install && npm run dev
+cd frontend
+npm install
 
-# 后端
-cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
+# 后端（建议用 Python 3.11 / 3.12 建虚拟环境；3.14 太新，部分包还没有轮子）
+cd ..\backend
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
+
+**日常启动（两个终端）**
+
+```powershell
+# 终端 1：后端
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload --port 8000
+# 打开 http://localhost:8000/docs 可以看接口文档
+
+# 终端 2：前端
+cd frontend
+npm run dev
+# 打开 http://localhost:5173
+```
+
+**跑测试**
+
+```powershell
+cd backend
+python -m pytest tests/ -q
+# 或者不装 pytest 也能跑：
+python tests/test_scoring.py
+```
+
+**当前状态**
+
+- 前端可独立运行：默认 `VITE_MOCK=true`，用 `src/mock/route.json` 的假数据，不依赖后端
+- 后端 `/api/tips` 已真接高德（需要 `.env` 里配 `AMAP_WEB_KEYS`）
+- 后端 `/api/route/generate` 目前返回合成数据，召回逻辑待实现（见 `app/services/mock_data.py` 顶部注释）
+- 打分与约束求解已实现并有单测：`backend/app/algo/scoring.py`
 
 ## 六人分工
 
