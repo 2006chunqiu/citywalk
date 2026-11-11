@@ -100,3 +100,21 @@ pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 3. **动手前说一句。** 要改别人可能也在改的文件（尤其是地图、接口层），群里发一句「我改 xxx」，改完说「推了」。
 
 完整协作步骤见 [docs/setup.md](docs/setup.md)。
+
+## 前端部署（GitHub Pages）
+
+推送到 `main` 后自动构建并发布，配置见 `.github/workflows/deploy-pages.yml`。
+
+首次启用需要两步（只在仓库设置里点，不需要改代码）：
+
+1. **Settings → Pages → Source** 选 **GitHub Actions**
+2. **Settings → Secrets and variables → Actions** 新增两个 secret：
+   - `VITE_AMAP_JS_KEY`
+   - `VITE_AMAP_JS_SECRET`
+
+发布后的地址是 `https://<用户名>.github.io/citywalk/`。
+
+注意两点：
+
+- 部署版本走 **mock 数据**（`VITE_MOCK=true`），因为后端还没上线；能看到完整页面与交互，但路线是假的
+- 高德 JS Key 的**域名白名单**要加上这个地址，否则地图不显示
