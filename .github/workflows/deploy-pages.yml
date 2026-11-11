@@ -26,6 +26,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 若仓库尚未启用 Pages，这一步会自动开通（依赖 pages: write 权限），
+      # 省去手动去 Settings → Pages 里选 Source。
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
