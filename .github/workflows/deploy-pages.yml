@@ -26,11 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 若仓库尚未启用 Pages，这一步会自动开通（依赖 pages: write 权限），
-      # 省去手动去 Settings → Pages 里选 Source。
+      # 注意：GitHub 不允许工作流自动创建 Pages 站点
+      # （会报 Resource not accessible by integration）。
+      # 所以仓库必须先手动启用一次：Settings → Pages → Source 选 GitHub Actions。
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/setup-node@v4
         with:
