@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from ..algo.scoring import haversine_m
 from ..errors import ApiError
 from ..schemas import GenerateRequest, ReplanRequest
-from ..services import mock_data, store
+from ..services import mock_data, routing, store, validate
 
 router = APIRouter(prefix="/api/route", tags=["route"])
 
@@ -36,6 +36,10 @@ async def generate(req: GenerateRequest):
         tag_order=req.tagOrder or req.tagIds,
         effort=req.effort,
     )
+    # 输出前守门：坐标越界/重复/来源异常的点直接剔除
+    result = validate.validate_schemes(result)
+    # 真实步行折线（失败自动降级为直线，接口不会 500）
+    result = await routing.attach_walking(result)
     store.save_result(result)
     return result
 
@@ -50,6 +54,7 @@ async def replan(req: ReplanRequest):
         tag_order=req.tagOrder or req.tagIds,
         effort=req.effort,
     )
+    result = validate.validate_schemes(result)
     excluded = set(req.excludeIds)
     if excluded:
         # 已到达的点不得再出现在新路线中（PRD R-04-05-3）
@@ -59,6 +64,8 @@ async def replan(req: ReplanRequest):
                 dict(w, seq=i) for i, w in enumerate(kept, start=1)
             ]
             scheme["waypointCount"] = len(kept)
+    # 剔除点后按真实步行路径重算折线与里程
+    result = await routing.attach_walking(result)
     store.save_result(result)
     return result
 

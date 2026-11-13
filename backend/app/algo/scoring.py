@@ -35,6 +35,8 @@ class Poi:
     rating: float | None = None
     stay_minutes: int = 10
     source: str = "amap"
+    type_name: str = ""
+    address: str = ""
 
     @property
     def xy(self) -> tuple[float, float]:

@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -15,11 +16,15 @@ BASE = "https://restapi.amap.com"
 
 # infocode -> 冷却秒数；None 表示永久失效
 COOLDOWN: dict[str, int | None] = {
-    "10044": 10,      # CUQPS_HAS_EXCEEDED_THE_LIMIT 并发超限
     "10003": 3600,    # DAILY_QUERY_OVER_LIMIT 当日配额耗尽
     "10001": None,    # INVALID_USER_KEY
     "10009": None,    # USERKEY_PLAT_NOMATCH
 }
+
+# 瞬时并发超限（个人 Key 约 3 QPS）：短等待后重试，不惩罚 Key
+# 单 Key 场景下若把 Key 打入冷却，本次请求就彻底没 Key 可用了
+BACKOFF = {"10021", "10044", "10004"}
+BACKOFF_SECONDS = 0.6
 
 # 不会因为切换 Key 而好转的错误，直接抛出
 FATAL_REPORT = {"10001", "10009"}
@@ -111,6 +116,11 @@ async def _call(path: str, params: dict[str, Any], timeout: float = 5.0, tries: 
             if str(data.get("status")) == "1":
                 return data
 
+            if infocode in BACKOFF:
+                last = AmapError(infocode, data.get("info", ""))
+                await asyncio.sleep(BACKOFF_SECONDS)
+                continue
+
             if infocode in FATAL_REPORT or infocode in COOLDOWN:
                 KEY_POOL.report(state, infocode)
                 last = AmapError(infocode, data.get("info", ""))
@@ -192,3 +202,43 @@ async def place_around(
             }
         )
     return out
+
+
+async def walking(origin: tuple[float, float], destination: tuple[float, float]) -> dict:
+    """步行路径规划（v3/direction/walking）。
+
+    返回 {distance: 米, duration: 秒, polyline: [[lng,lat],...], source: "amap"}。
+    steps[].polyline 是 "lng,lat;lng,lat" 字符串，这里按分号切开、逐个转成浮点数组，
+    并去掉相邻重复点——前端直接把数组喂给高德 Polyline，不需要二次解析。
+    """
+    data = await _call(
+        "/v3/direction/walking",
+        {
+            "origin": f"{origin[0]:.6f},{origin[1]:.6f}",
+            "destination": f"{destination[0]:.6f},{destination[1]:.6f}",
+        },
+    )
+    paths = (data.get("route") or {}).get("paths") or []
+    if not paths:
+        raise AmapError("NO_PATH", "起终点之间无可用步行路径")
+
+    path = paths[0]
+    polyline: list[list[float]] = []
+    for step in path.get("steps") or []:
+        for pair in str(step.get("polyline") or "").split(";"):
+            if "," not in pair:
+                continue
+            lng_s, lat_s = pair.split(",")[:2]
+            try:
+                pt = [round(float(lng_s), 6), round(float(lat_s), 6)]
+            except ValueError:
+                continue
+            if not polyline or pt != polyline[-1]:
+                polyline.append(pt)
+
+    return {
+        "distance": int(float(path.get("distance") or 0)),
+        "duration": int(float(path.get("duration") or 0)),
+        "polyline": polyline,
+        "source": "amap",
+    }
