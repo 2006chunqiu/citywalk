@@ -17,7 +17,10 @@ import {
   geocodeAddress,
   postGenerate,
   postIntent,
+  postReplan,
   type Effort,
+  type LngLat,
+  type Scheme,
   type TagId,
 } from "@/lib/api";
 import { THEME_TAGS, schemeToPath, schemeToRoute } from "@/lib/adapt";
@@ -41,6 +44,74 @@ function toEffort(duration: string, intensity: Intensity | ""): Effort {
   if (duration === "全天") return "deep";
   return "normal";
 }
+
+interface RefineIntent {
+  excludeIds: string[];
+  effort?: Effort;
+  matched: string[];
+  understood: boolean;
+}
+
+/** 把「再改一下」这句话翻成筛选条件：只输出 poiId 和 effort，不产生任何地点。 */
+function parseRefine(text: string, schemes: Scheme[], selected = 0): RefineIntent {
+  const ids = new Set<string>();
+  const matched: string[] = [];
+  let understood = false;
+  const addBy = (label: string, pred: (w: Scheme["waypoints"][number]) => boolean) => {
+    understood = true;
+    let hit = false;
+    for (const s of schemes) {
+      for (const w of s.waypoints) {
+        if (pred(w)) {
+          ids.add(w.poiId);
+          hit = true;
+        }
+      }
+    }
+    if (hit) matched.push(label);
+  };
+
+  if (/咖啡/.test(text)) addBy("去掉咖啡", (w) => `${w.name}${w.typeName ?? ""}`.includes("咖啡"));
+  if (/公园|绿地/.test(text)) addBy("去掉公园", (w) => (w.tagIds ?? []).includes("park"));
+  if (/历史|老建筑|旧址|故居/.test(text)) addBy("去掉历史建筑", (w) => (w.tagIds ?? []).includes("history"));
+  if (/美食|小吃|吃|餐/.test(text)) addBy("去掉美食", (w) => (w.tagIds ?? []).includes("food"));
+  if (/文艺|书店|艺术/.test(text)) addBy("去掉文艺", (w) => (w.tagIds ?? []).includes("art"));
+  if (/江景|江边|看江|水边/.test(text)) addBy("去掉江景", (w) => (w.tagIds ?? []).includes("river"));
+  if (/市场|菜场|菜市场/.test(text))
+    addBy("去掉市场", (w) => {
+      const t = `${w.name}${w.typeName ?? ""}`;
+      return t.includes("市场") || t.includes("菜场");
+    });
+  if (/拍照|出片/.test(text)) addBy("去掉拍照", (w) => (w.tagIds ?? []).includes("photo"));
+  if (/亲子|带娃|孩子/.test(text)) addBy("去掉亲子", (w) => (w.tagIds ?? []).includes("family"));
+  if (/换一批|换一组|都换/.test(text)) {
+    understood = true;
+    // 只换当前这条方案的点，避免把整个走廊的候选池一次掏空
+    const current = schemes[selected] ?? schemes[0];
+    if (current) for (const w of current.waypoints) ids.add(w.poiId);
+    matched.push("换一批");
+  }
+
+  let effort: Effort | undefined;
+  if (/少走|短一点|别太累|轻松|走太远|不想走远/.test(text)) {
+    understood = true;
+    effort = "easy";
+    matched.push("优先最短");
+  } else if (/多逛|深度|多看|长一点/.test(text)) {
+    understood = true;
+    effort = "deep";
+    matched.push("优先兴趣最全");
+  }
+
+  return { excludeIds: Array.from(ids), effort, matched, understood };
+}
+
+const REFINE_TEMPLATES = [
+  { label: "别给咖啡馆", value: "别给我咖啡馆了" },
+  { label: "少走点路", value: "少走点路，别太累" },
+  { label: "换一批", value: "换一批" },
+  { label: "多逛一会", value: "多逛一会，想多看几个点" },
+];
 
 const DURATION_OPTIONS = ["2–3 小时", "半日", "全天"] as const;
 
@@ -67,6 +138,17 @@ export default function App() {
   const [status, setStatus] = useState<GenStatus>("idle");
   const [error, setError] = useState<GenError | null>(null);
   const [trip, setTrip] = useState<{ from: string; to: string } | null>(null);
+  const [schemes, setSchemes] = useState<Scheme[]>([]);
+  const [lastReq, setLastReq] = useState<{
+    origin: LngLat;
+    destination: LngLat;
+    tagIds: TagId[];
+    effort: Effort;
+  } | null>(null);
+  const [excluded, setExcluded] = useState<string[]>([]);
+  const [refineText, setRefineText] = useState("");
+  const [refining, setRefining] = useState(false);
+  const [refineNote, setRefineNote] = useState<string | null>(null);
 
   const [activeStop, setActiveStop] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -94,6 +176,10 @@ export default function App() {
     setSelected(0);
     setActiveStop(null);
     setDetailOpen(false);
+    setSchemes([]);
+    setExcluded([]);
+    setRefineText("");
+    setRefineNote(null);
     setStatus("planning");
 
     try {
@@ -113,11 +199,12 @@ export default function App() {
       tags = tags.slice(0, 4);
 
       // 3. 种子库召回 + 打分 + 高德真实步行折线，全在后端完成
+      const effort = toEffort(duration, intensity);
       const result = await postGenerate({
         origin: { lng: from.lng, lat: from.lat },
         destination: { lng: to.lng, lat: to.lat },
         tagIds: tags,
-        effort: toEffort(duration, intensity),
+        effort,
       });
 
       if (!result.schemes?.length) {
@@ -125,6 +212,13 @@ export default function App() {
       }
 
       setTrip({ from: from.name, to: to.name });
+      setSchemes(result.schemes);
+      setLastReq({
+        origin: { lng: from.lng, lat: from.lat },
+        destination: { lng: to.lng, lat: to.lat },
+        tagIds: tags,
+        effort,
+      });
       setRoutes(
         result.schemes.map((scheme) =>
           schemeToRoute(scheme, { originName: from.name, tagIds: tags }),
@@ -144,6 +238,87 @@ export default function App() {
         });
       }
       setStatus("error");
+    }
+  };
+
+  const handleRefine = async (raw?: string) => {
+    const text = (raw ?? refineText).trim();
+    if (!text || !lastReq || refining) return;
+
+    const intent = parseRefine(text, schemes, selected);
+    if (!intent.understood) {
+      setError({
+        code: "REFINE_NOT_UNDERSTOOD",
+        message: "没太听懂这句。可以试试「别给我咖啡馆了」「少走点路」「换一批」。",
+      });
+      return;
+    }
+    if (intent.excludeIds.length === 0 && !intent.effort) {
+      setError({
+        code: "REFINE_NOOP",
+        message: "这条路线里没有你要避开的这类点位，不用改。",
+      });
+      return;
+    }
+
+    setRefining(true);
+    setError(null);
+    try {
+      const merged = Array.from(new Set([...excluded, ...intent.excludeIds]));
+      const next = await postReplan({
+        ...lastReq,
+        effort: intent.effort ?? lastReq.effort,
+        excludeIds: merged,
+      });
+      if (!next.schemes?.length) {
+        throw new BackendError("NO_SCHEME", "按这个条件没排出路线，换个说法试试。");
+      }
+
+      setSchemes(next.schemes);
+      setRoutes(
+        next.schemes.map((scheme) =>
+          schemeToRoute(scheme, {
+            originName: trip?.from ?? "起点",
+            tagIds: lastReq.tagIds,
+          }),
+        ),
+      );
+      setPaths(next.schemes.map((scheme) => schemeToPath(scheme)));
+
+      // “少走”选最短的一条，“多逛”选站点最多的一条，其余默认均衡
+      let target = next.schemes.length > 2 ? 2 : 0;
+      if (intent.effort === "easy") {
+        target = next.schemes.reduce(
+          (best, s, i) => (s.distanceM < next.schemes[best].distanceM ? i : best),
+          0,
+        );
+      } else if (intent.effort === "deep") {
+        target = next.schemes.reduce(
+          (best, s, i) => (s.waypointCount > next.schemes[best].waypointCount ? i : best),
+          0,
+        );
+      }
+      setSelected(target);
+      setExcluded(merged);
+      setLastReq({ ...lastReq, effort: intent.effort ?? lastReq.effort });
+      setRefineText("");
+      setRefineNote(
+        intent.matched.length
+          ? `已按「${intent.matched.join("、")}」重排`
+          : "已重新排了一版",
+      );
+      setStatus("done");
+    } catch (e) {
+      if (e instanceof BackendError) {
+        setError({ code: e.code, message: e.message, hint: e.hint });
+      } else {
+        setError({
+          code: "UNKNOWN",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    } finally {
+      setRefining(false);
     }
   };
 
@@ -329,7 +504,7 @@ export default function App() {
               {/* 错误提示 */}
               {error && (
                 <section className="mt-3 rounded-[18px] border border-clay/30 bg-clay/8 px-4 py-3 text-[11.5px] leading-relaxed text-clay">
-                  <p className="font-display text-[12px]">路线生成失败</p>
+                  <p className="font-display text-[12px]">这一步没成功</p>
                   <p className="mt-1 opacity-90">{error.message}</p>
                   {error.hint && (
                     <p className="mt-1 text-[10.5px] opacity-70">{error.hint}</p>
@@ -395,6 +570,65 @@ export default function App() {
                   )}
 
                   <RouteMiniCard route={route} onOpen={() => setDetailOpen(true)} />
+
+                  {/* 再改一下：一句话 → 筛选条件 / 强度，调 replan */}
+                  <div className="mt-3 rounded-[18px] border border-hairline bg-card p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[9px] tracking-[0.24em] text-muted-foreground">
+                        再改一下
+                      </p>
+                      {refineNote && (
+                        <p className="truncate text-[9.5px] text-river">{refineNote}</p>
+                      )}
+                    </div>
+                    <div className="mt-2 flex gap-1.5">
+                      <input
+                        type="text"
+                        value={refineText}
+                        onChange={(e) => setRefineText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleRefine();
+                        }}
+                        placeholder="如：别给我咖啡馆了 / 少走点路"
+                        className="h-8 min-w-0 flex-1 rounded-lg border border-hairline bg-background px-2.5 text-[11.5px] outline-none transition focus:border-river/50 focus:ring-2 focus:ring-river/15"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRefine()}
+                        disabled={refining || !refineText.trim()}
+                        className={cn(
+                          "flex h-8 shrink-0 items-center gap-1 rounded-lg px-3 text-[11px] transition",
+                          refining || !refineText.trim()
+                            ? "cursor-not-allowed bg-secondary text-muted-foreground"
+                            : "bg-river text-primary-foreground hover:opacity-92"
+                        )}
+                      >
+                        {refining && (
+                          <Loader2 className="size-3.5 animate-spin" strokeWidth={1.9} />
+                        )}
+                        重排
+                      </button>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {REFINE_TEMPLATES.map((t) => (
+                        <button
+                          key={t.label}
+                          type="button"
+                          disabled={refining}
+                          onClick={() => {
+                            setRefineText(t.value);
+                            handleRefine(t.value);
+                          }}
+                          className="rounded-full border border-hairline bg-background px-2 py-0.5 text-[10px] text-muted-foreground transition hover:border-river/40 hover:text-river disabled:opacity-50"
+                        >
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 text-[9.5px] text-muted-foreground/70">
+                      只改筛选条件和强度，不会新增地点。
+                    </p>
+                  </div>
                 </section>
               )}
 

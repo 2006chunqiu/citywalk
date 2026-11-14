@@ -66,6 +66,14 @@ async def replan(req: ReplanRequest):
                 dict(w, seq=i) for i, w in enumerate(kept, start=1)
             ]
             scheme["waypointCount"] = len(kept)
+        # 排空的方案没有展示价值，直接丢弃；全空说明已无点可用
+        result["schemes"] = [s for s in result["schemes"] if s["waypoints"]]
+        if not result["schemes"]:
+            raise ApiError(
+                400,
+                "NO_POIS_LEFT",
+                "排除这些点后没有可用的途经点，换个条件或主题试试",
+            )
     # 剔除点后按真实步行路径重算折线与里程
     result = await routing.attach_walking(result)
     store.save_result(result)

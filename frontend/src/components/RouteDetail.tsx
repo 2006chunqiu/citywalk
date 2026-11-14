@@ -33,6 +33,7 @@ export function RouteDetail({
   onSelectStop,
   open,
 }: RouteDetailProps) {
+  const firstStop = route.stops[0];
   return (
     <aside
       aria-hidden={!open}
@@ -212,15 +213,21 @@ export function RouteDetail({
       </div>
 
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline bg-background/95 px-5 py-3.5 backdrop-blur">
-        <a
-          href={amapMarkerUrl(route.stops[0])}
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-river text-[12px] text-primary-foreground transition hover:opacity-90"
-        >
-          <Navigation className="size-3.5" strokeWidth={1.9} />
-          导航到起点 · {route.start}
-        </a>
+        {firstStop ? (
+          <a
+            href={amapMarkerUrl(firstStop)}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-10 flex-1 items-center justify-center gap-1.5 rounded-full bg-river text-[12px] text-primary-foreground transition hover:opacity-90"
+          >
+            <Navigation className="size-3.5" strokeWidth={1.9} />
+            导航到起点 · {route.start}
+          </a>
+        ) : (
+          <span className="flex h-10 flex-1 items-center justify-center rounded-full bg-secondary text-[12px] text-muted-foreground">
+            这条路线没有途经点
+          </span>
+        )}
         <ArrowUpRight className="hidden size-3.5 text-muted-foreground/50 lg:block" strokeWidth={1.9} />
       </div>
     </aside>

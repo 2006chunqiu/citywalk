@@ -179,6 +179,8 @@
 
 响应同 generate。
 
+`excludeIds` 中的点会被剔除并按顺序重新编号；剔除后没有途经点的方案会被丢弃。三条方案都被排空时返回 `400 NO_POIS_LEFT`，不会返回只有起终点的空路线。
+
 ## 八、7　POST /api/share
 
 请求 `{ "schemeId": "s_8f2a" }`
@@ -274,6 +276,7 @@
 | GEOCODE_NOT_FOUND | 地址没有匹配结果 | 404 |
 | INVALID_REQUEST | 请求参数校验失败（统一错误结构） | 422 |
 | NO_CANDIDATE | 该区域无可推荐点位 | 200，status=fail |
+| NO_POIS_LEFT | 排除后没有可用途经点 | 400 |
 | ALL_KEYS_EXHAUSTED | Key 池全部不可用 | 200，status=degraded |
 | SHARE_EXPIRED | 分享链接失效 | 404 |
 | INTERNAL | 服务内部错误 | 500 |
