@@ -5,9 +5,11 @@
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from .config import settings
 from .errors import ApiError
@@ -42,4 +44,13 @@ app.include_router(intent.router)
 
 @app.get("/")
 async def index():
-    return {"service": "citywalk-api", "docs": "/docs", "health": "/api/health"}
+    return {"service": "citywalk-api", "docs": "/docs", "demo": "/demo", "health": "/api/health"}
+
+
+WEB_DIR = Path(__file__).resolve().parent / "web"
+
+
+@app.get("/demo", include_in_schema=False)
+async def demo_page():
+    """保底演示页：单文件 HTML，同源调用本服务接口。"""
+    return FileResponse(WEB_DIR / "citywalk-demo.html", media_type="text/html")

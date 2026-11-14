@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>漫步江城 · 路线演示</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231c2b2d'/><path d='M6 24c4-8 8-4 12-10s6-2 8-8' stroke='%23c1553c' stroke-width='2.5' fill='none' stroke-linecap='round'/><circle cx='9' cy='19' r='2.4' fill='%23f4efe6'/><circle cx='24' cy='9' r='2.4' fill='%23f4efe6'/></svg>">
+<link rel="stylesheet" href="https://fastly.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@500;700&display=swap">
+<style>
+:root{
+  --ink:#1c2b2d;
+  --ink-2:#3a4a4c;
+  --paper:#f4efe6;
+  --paper-2:#fbf8f2;
+  --line:#ddd4c6;
+  --accent:#c1553c;
+  --river:#3d6b7d;
+  --amber:#b06a2c;
+  --ok:#3f7d5a;
+  --warn:#b07a1c;
+  --bad:#a83a2c;
+  --radius:10px;
+  --shadow:0 1px 2px rgba(28,43,45,.06),0 6px 18px rgba(28,43,45,.05);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:"PingFang SC","Microsoft YaHei","Hiragino Sans GB",system-ui,-apple-system,sans-serif;
+  color:var(--ink);
+  background:var(--paper);
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+h1,h2,h3{font-family:"Noto Serif SC","Songti SC",serif;margin:0;font-weight:700;letter-spacing:.01em}
+
+/* ===== 布局 ===== */
+.app{display:grid;grid-template-columns:392px 1fr;height:100vh;min-height:640px}
+.side{border-right:1px solid var(--line);background:var(--paper-2);display:flex;flex-direction:column;min-height:0}
+.side-head{padding:20px 20px 14px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand h1{font-size:22px;letter-spacing:.08em}
+.brand span{font-size:12px;color:var(--ink-2);letter-spacing:.14em}
+.sub{margin-top:6px;font-size:12px;color:#6d7a7b;line-height:1.6}
+.side-body{padding:16px 20px 8px;overflow:auto;flex:1;min-height:0}
+.sec{margin-bottom:18px}
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.sec-title{font-size:13px;font-weight:600;color:var(--ink);display:flex;align-items:center;gap:6px}
+.sec-title i{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--ink);color:var(--paper-2);font-style:normal;font-size:11px;font-weight:700}
+.hint{font-size:11px;color:#7b8788;line-height:1.5}
+
+textarea,input[type=text]{
+  width:100%;border:1px solid var(--line);background:#fff;border-radius:8px;
+  padding:10px 12px;outline:none;resize:vertical;line-height:1.6;font-size:13px;
+  transition:border-color .15s;
+}
+textarea:focus,input[type=text]:focus{border-color:var(--river)}
+textarea{min-height:64px}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.quick button{
+  border:1px dashed var(--line);background:transparent;color:var(--ink-2);
+  padding:4px 9px;border-radius:99px;font-size:11.5px;cursor:pointer;
+}
+.quick button:hover{border-color:var(--accent);color:var(--accent)}
+
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11.5px;color:#6d7a7b}
+select{
+  width:100%;border:1px solid var(--line);background:#fff;border-radius:8px;
+  padding:9px 10px;font-size:12.5px;outline:none;appearance:none;
+  background-image:linear-gradient(45deg,transparent 49%,#8b9797 51%),linear-gradient(135deg,#8b9797 51%,transparent 49%);
+  background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+}
+.pick{display:flex;gap:8px;margin-top:8px}
+.pick button{
+  flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;
+  padding:7px 0;font-size:12px;cursor:pointer;color:var(--ink-2);
+}
+.pick button.on{border-color:var(--river);color:var(--river);background:#eef3f4}
+
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  display:inline-flex;align-items:center;gap:5px;
+  border:1px solid var(--line);background:#fff;color:var(--ink-2);
+  padding:5px 10px;border-radius:99px;font-size:12px;cursor:pointer;
+  transition:all .15s;user-select:none;
+}
+.chip:hover{border-color:var(--ink-2)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper-2)}
+.chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.5}
+
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.seg button{border:0;background:transparent;padding:8px 0;font-size:12.5px;cursor:pointer;color:var(--ink-2);border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:var(--paper-2)}
+
+.primary{
+  width:100%;border:0;border-radius:9px;background:var(--accent);color:#fff;
+  padding:12px 0;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:.06em;
+  box-shadow:0 2px 0 rgba(0,0,0,.12);
+}
+.primary:hover{filter:brightness(.96)}
+.primary:disabled{background:#c9c2b6;cursor:not-allowed;box-shadow:none}
+.ghost{
+  width:100%;border:1px solid var(--line);background:#fff;border-radius:9px;
+  padding:10px 0;font-size:13px;cursor:pointer;color:var(--ink-2);margin-top:8px;
+}
+.ghost:disabled{opacity:.5;cursor:not-allowed}
+.ghost:not(:disabled):hover{border-color:var(--river);color:var(--river)}
+
+/* ===== 主区 ===== */
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--paper)}
+.topbar{
+  display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);
+  background:var(--paper-2);
+}
+.pill{
+  display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2);
+  border:1px solid var(--line);border-radius:99px;padding:4px 10px;background:#fff;
+}
+.pill b{font-weight:600;color:var(--ink)}
+.status-dot{width:7px;height:7px;border-radius:50%;background:#b8b0a2}
+.status-dot.up{background:var(--ok)}
+.status-dot.off{background:var(--bad)}
+.topbar .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+.split{display:grid;grid-template-rows:minmax(260px,44%) 1fr;min-height:0;flex:1}
+#map{width:100%;height:100%;background:#e7e2d8}
+.map-note{
+  position:absolute;left:14px;bottom:14px;z-index:500;background:rgba(251,248,242,.94);
+  border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:11px;color:#6d7a7b;
+  pointer-events:none;
+}
+.map-wrap{position:relative;min-height:0}
+
+.detail{overflow:auto;padding:14px 18px 26px;min-height:0;border-top:1px solid var(--line)}
+.tabs{display:flex;gap:8px;margin-bottom:12px}
+.tab{
+  flex:1;text-align:left;border:1px solid var(--line);background:#fff;border-radius:9px;
+  padding:10px 12px;cursor:pointer;position:relative;overflow:hidden;
+}
+.tab.on{border-color:var(--ink);box-shadow:var(--shadow)}
+.tab .t-name{font-size:12px;color:#7b8788;display:flex;justify-content:space-between;align-items:center}
+.tab .t-main{font-size:17px;font-weight:700;margin:3px 0 2px;font-family:"Noto Serif SC",serif}
+.tab .t-sub{font-size:11px;color:#6d7a7b}
+.tab .bar{position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--river)}
+.tab[data-mode=max] .bar{background:var(--amber)}
+.tab[data-mode=balanced] .bar{background:var(--accent)}
+
+.reason{
+  background:#fff;border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:12.5px;line-height:1.75;
+}
+.reason .lead{color:#6d7a7b;font-size:11px;letter-spacing:.06em;margin-bottom:4px}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.badge{font-size:11px;border-radius:99px;padding:3px 9px;border:1px solid var(--line);background:#fff;color:var(--ink-2)}
+.badge.good{border-color:#bfd8c9;background:#f1f7f3;color:var(--ok)}
+.badge.warn{border-color:#e4d3ae;background:#faf4e6;color:var(--warn)}
+.badge.bad{border-color:#e3c2bc;background:#fbf1ef;color:var(--bad)}
+
+.stops{display:flex;flex-direction:column;gap:0;margin-top:12px}
+.stop{display:grid;grid-template-columns:34px 1fr auto;gap:10px;padding:10px 2px;border-bottom:1px solid #e8e1d6}
+.stop:last-child{border-bottom:0}
+.stop .seq{
+  width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:var(--ink);color:var(--paper-2);font-size:12px;font-weight:600;margin-top:2px;
+}
+.stop .nm{font-size:13.5px;font-weight:600;line-height:1.5}
+.stop .meta{font-size:11.5px;color:#7b8788;line-height:1.6;margin-top:2px}
+.stop .rt{font-size:11.5px;color:var(--ink-2);text-align:right;white-space:nowrap}
+.empty{padding:28px 8px;text-align:center;color:#8b9797;font-size:12.5px;line-height:1.9}
+
+.stats{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.stat{flex:1 1 132px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.stat .k{font-size:10.5px;color:#8b9797;letter-spacing:.05em}
+.stat .v{font-size:13px;font-weight:600;margin-top:3px;font-variant-numeric:tabular-nums}
+
+details.raw{margin-top:12px}
+details.raw summary{cursor:pointer;font-size:11.5px;color:#7b8788}
+pre{
+  margin:8px 0 0;background:#fff;border:1px solid var(--line);border-radius:8px;
+  padding:10px;font-size:11px;line-height:1.6;overflow:auto;max-height:220px;
+  font-family:ui-monospace,Consolas,monospace;
+}
+
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);
+  background:var(--ink);color:#f6f1e7;font-size:12.5px;padding:9px 16px;border-radius:99px;
+  opacity:0;pointer-events:none;transition:all .22s;z-index:900;max-width:80vw;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:var(--bad)}
+
+@media (max-width:960px){
+  .app{grid-template-columns:1fr;grid-template-rows:auto 1fr;height:auto;min-height:100vh}
+  .side{border-right:0;border-bottom:1px solid var(--line)}
+  .side-body{max-height:none}
+  .split{grid-template-rows:56vh auto}
+  .detail{max-height:none}
+  .row{grid-template-columns:1fr}
+}
+:focus-visible{outline:2px solid var(--river);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== 左侧：输入区 ===== -->
+  <aside class="side">
+    <div class="side-head">
+      <div class="brand">
+        <h1>漫步江城</h1><span>WUHAN CITY WALK</span>
+      </div>
+      <div class="sub">一句话说出想怎么逛，后端从种子库挑选点位、用高德步行规划画出真实路线。本页直连本地后端，无需任何地图 Key。</div>
+    </div>
+
+    <div class="side-body">
+      <section class="sec">
+        <div class="sec-head">
+          <div class="sec-title"><i>1</i>想去哪儿逛</div>
+          <span class="hint">说人话即可</span>
+        </div>
+        <textarea id="query" placeholder="例：想走点文艺的老街，顺便拍拍照"></textarea>
+        <div class="quick">
+          <button data-q="想走点文艺的老街，顺便拍拍照">文艺老街</button>
+          <button data-q="带爸妈逛逛公园和江滩，别太累">公园江滩</button>
+          <button data-q="找点好吃的，走走市井小巷">市井小吃</button>
+          <button data-q="看看历史建筑，拍点有故事的照片">历史建筑</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <div class="sec-title"><i>2</i>从哪走到哪</div>
+          <span class="hint" id="pickHint">点地图可改点</span>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="startSel">起点</label>
+            <select id="startSel"></select>
+          </div>
+          <div class="field">
+            <label for="endSel">终点</label>
+            <select id="endSel"></select>
+          </div>
+        </div>
+        <div class="pick">
+          <button id="pickStart">在地图上选起点</button>
+          <button id="pickEnd">在地图上选终点</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <div class="sec-title"><i>3</i>兴趣标签</div>
+          <span class="hint" id="tagHint">最多 4 个</span>
+        </div>
+        <div class="chips" id="tags"></div>
+        <div class="hint" style="margin-top:8px">点「识意图」可以自动从一句话里提取标签。</div>
+      </section>
+
+      <section class="sec">
+        <div class="sec-head">
+          <div class="sec-title"><i>4</i>走多细</div>
+        </div>
+        <div class="seg" id="effort">
+          <button data-v="easy">轻松</button>
+          <button data-v="normal" class="on">标准</button>
+          <button data-v="deep">深度</button>
+        </div>
+      </section>
+    </div>
+
+    <div style="padding:0 20px 18px">
+      <button class="primary" id="go">生成三条路线</button>
+      <button class="ghost" id="replan" disabled>走累了，从上一个点重新规划</button>
+      <div class="hint" id="excludeNote" style="margin-top:8px"></div>
+    </div>
+  </aside>
+
+  <!-- ===== 右侧：地图 + 结果 ===== -->
+  <main class="main">
+    <div class="topbar">
+      <span class="pill"><span class="status-dot" id="hDot"></span>后端 <b id="hTxt">检测中</b></span>
+      <span class="pill">种子库 <b id="hPoi">—</b> 条</span>
+      <span class="pill">折线来源 <b id="hSrc">—</b></span>
+      <span class="right">
+        <span class="pill" id="tagEcho">未选标签</span>
+      </span>
+    </div>
+
+    <div class="split">
+      <div class="map-wrap"><div id="map"></div><div class="map-note">底图：高德街道图；接口坐标 GCJ-02，与底图同一坐标系</div></div>
+
+      <section class="detail">
+        <div class="tabs" id="tabs"></div>
+        <div id="resultArea">
+          <div class="empty">左边输入一句话，点「生成三条路线」<br>时间预算：一次约 2～4 秒</div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://fastly.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+
+/* ================= 常量 ================= */
+const PRESETS = [
+  { id:"whu",    name:"武汉大学（桂园门）", lng:114.3608, lat:30.5387 },
+  { id:"tanhualin", name:"昙华林",        lng:114.3165, lat:30.5497 },
+  { id:"jianghan", name:"江汉路",         lng:114.2880, lat:30.5810 },
+  { id:"hankou",   name:"汉口江滩",       lng:114.3000, lat:30.5900 },
+  { id:"hhl",      name:"黄鹤楼",         lng:114.3025, lat:30.5446 },
+  { id:"hubuxiang",name:"户部巷",         lng:114.2980, lat:30.5480 },
+  { id:"hanjie",   name:"楚河汉街",       lng:114.3340, lat:30.5590 },
+  { id:"guanggu",  name:"光谷广场",       lng:114.3990, lat:30.5050 },
+  { id:"wuchang",  name:"武昌火车站",     lng:114.3170, lat:30.5280 },
+  { id:"donghu",   name:"东湖听涛景区",   lng:114.3767, lat:30.5650 }
+];
+const MODE_LABEL = { shortest:"最短路线", max:"兴趣最全", balanced:"均衡推荐" };
+const MODE_COLOR = { shortest:"#3d6b7d", max:"#b06a2c", balanced:"#c1553c" };
+const TAG_MAX = 4;
+
+const state = {
+  tags: [],            // 标签元信息
+  picked: [],          // 已选标签
+  effort: "normal",
+  start: null, end: null,
+  schemes: [],
+  active: 0,
+  excluded: [],
+  picking: null,       // "start" | "end" | null
+  result: null,
+  layers: [],
+  markers: []
+};
+
+const $ = (s, root=document) => root.querySelector(s);
+const $$ = (s, root=document) => Array.from(root.querySelectorAll(s));
+
+/* ================= 工具 ================= */
+function toast(msg, isErr){
+  const el = $("#toast");
+  el.textContent = msg;
+  el.classList.toggle("err", !!isErr);
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>el.classList.remove("show"), 2600);
+}
+const fmtKm = m => (m/1000).toFixed(1) + " km";
+function fmtDur(s){
+  const h = Math.floor(s/3600), m = Math.round((s%3600)/60);
+  return h ? h + " 小时" + (m ? " " + m + " 分" : "") : m + " 分钟";
+}
+const fmtRating = r => (r == null ? "—" : Number(r).toFixed(1));
+
+/* 接口坐标是 GCJ-02，高德底图同为 GCJ-02，直接落点即对齐，不需要纠偏 */
+const toLatLng = (lng, lat) => [lat, lng];
+
+/* ================= 地图 ================= */
+let map = null;
+function initMap(){
+  map = L.map("map", { zoomControl:true, attributionControl:true }).setView([30.546, 114.330], 13);
+  L.tileLayer("https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}", {
+    subdomains:["1","2","3","4"], maxZoom:18,
+    attribution:'底图 &copy; 高德地图'
+  }).addTo(map);
+  map.on("click", e => {
+    if(!state.picking) return;
+    const ll = e.latlng;
+    setPoint(state.picking, ll.lat, ll.lng, "地图选点");
+    state.picking = null;
+    updatePickButtons();
+  });
+}
+function setPoint(which, lat, lng, label){
+  // 地图点击给出的就是展示坐标（GCJ-02），直接存给后端
+  const obj = { lng:+lng.toFixed(6), lat:+lat.toFixed(6), label:label };
+  if(which === "start") state.start = obj; else state.end = obj;
+  renderSelects();
+  drawEndpoints();
+}
+function clearLayers(){
+  state.layers.forEach(l => map.removeLayer(l));
+  state.markers.forEach(m => map.removeLayer(m));
+  state.layers = []; state.markers = [];
+}
+function numIcon(text, color, small){
+  const size = small ? 24 : 28;
+  return L.divIcon({
+    className:"",
+    html:`<span style="display:grid;place-items:center;width:${size}px;height:${size}px;border-radius:50%;
+      background:${color};color:#fbf8f2;font-size:${small?11:12}px;font-weight:600;
+      box-shadow:0 2px 6px rgba(28,43,45,.28);border:2px solid #fbf8f2">${text}</span>`,
+    iconSize:[size,size], iconAnchor:[size/2,size/2]
+  });
+}
+function drawEndpoints(){
+  if(!map) return;
+  state.layers = state.layers.filter(l => {
+    if(l.__kind === "endpoint"){ map.removeLayer(l); return false; }
+    return true;
+  });
+  if(state.start){
+    const m = L.marker(toLatLng(state.start.lng, state.start.lat), {icon:numIcon("起","#3f7d5a",true), zIndexOffset:600})
+      .addTo(map).bindPopup("起点：" + state.start.label);
+    m.__kind = "endpoint"; state.layers.push(m);
+  }
+  if(state.end){
+    const m = L.marker(toLatLng(state.end.lng, state.end.lat), {icon:numIcon("终","#a83a2c",true), zIndexOffset:600})
+      .addTo(map).bindPopup("终点：" + state.end.label);
+    m.__kind = "endpoint"; state.layers.push(m);
+  }
+}
+
+/* ================= 表单渲染 ================= */
+function renderSelects(){
+  const fill = (sel, key) => {
+    sel.innerHTML = '<option value="">自定义点</option>' + PRESETS.map(p => {
+      const cur = state[key];
+      const on = cur && Math.abs(cur.lng - p.lng) < 1e-4 && Math.abs(cur.lat - p.lat) < 1e-4;
+      return `<option value="${p.id}" ${on?"selected":""}>${p.name}</option>`;
+    }).join("");
+  };
+  fill($("#startSel"), "start");
+  fill($("#endSel"), "end");
+}
+function bindPresets(){
+  $("#startSel").addEventListener("change", e => {
+    const p = PRESETS.find(x => x.id === e.target.value);
+    if(p) state.start = {lng:p.lng, lat:p.lat, label:p.name};
+    drawEndpoints();
+  });
+  $("#endSel").addEventListener("change", e => {
+    const p = PRESETS.find(x => x.id === e.target.value);
+    if(p) state.end = {lng:p.lng, lat:p.lat, label:p.name};
+    drawEndpoints();
+  });
+}
+function updatePickButtons(){
+  $("#pickStart").classList.toggle("on", state.picking === "start");
+  $("#pickEnd").classList.toggle("on", state.picking === "end");
+  $("#pickHint").textContent = state.picking
+    ? (state.picking === "start" ? "点地图设起点…" : "点地图设终点…")
+    : "点地图可改点";
+}
+function bindPick(){
+  $("#pickStart").addEventListener("click", () => {
+    state.picking = state.picking === "start" ? null : "start"; updatePickButtons();
+  });
+  $("#pickEnd").addEventListener("click", () => {
+    state.picking = state.picking === "end" ? null : "end"; updatePickButtons();
+  });
+}
+
+/* ================= 标签 ================= */
+async function loadTags(){
+  const box = $("#tags");
+  try{
+    const r = await fetch("/api/tags");
+    const data = await r.json();
+    state.tags = data.tags || [];
+    box.innerHTML = state.tags.map(t =>
+      `<button class="chip" data-id="${t.tagId}"><span class="dot"></span>${t.name}</button>`
+    ).join("");
+    $$(".chip", box).forEach(b => b.addEventListener("click", () => toggleTag(b.dataset.id)));
+  }catch(err){
+    box.innerHTML = '<span class="hint">标签接口不可用，请确认后端已启动</span>';
+  }
+}
+function toggleTag(id){
+  const i = state.picked.indexOf(id);
+  if(i >= 0) state.picked.splice(i, 1);
+  else{
+    if(state.picked.length >= TAG_MAX){ toast("最多选 " + TAG_MAX + " 个标签", true); return; }
+    state.picked.push(id);
+  }
+  renderChips(); renderEcho();
+}
+function renderChips(){
+  $$(".chip").forEach(b => b.classList.toggle("on", state.picked.includes(b.dataset.id)));
+  $("#tagHint").textContent = state.picked.length ? "已选 " + state.picked.length + " / " + TAG_MAX : "最多 4 个";
+}
+function renderEcho(){
+  const names = state.picked.map(id => (state.tags.find(t => t.tagId === id) || {}).name || id);
+  $("#tagEcho").textContent = names.length ? names.join(" · ") : "未选标签";
+}
+async function detectIntent(){
+  const q = $("#query").value.trim();
+  if(!q){ toast("先写一句话", true); return; }
+  try{
+    const r = await fetch("/api/intent", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ query:q })
+    });
+    const data = await r.json();
+    if(!data.tagIds || !data.tagIds.length){ toast("这句话没识别出标签，请手动选"); return; }
+    state.picked = data.tagIds.slice(0, TAG_MAX);
+    renderChips(); renderEcho();
+    toast("识别到 " + state.picked.length + " 个标签");
+  }catch(err){ toast("意图接口失败：" + err.message, true); }
+}
+
+/* ================= 生成 ================= */
+function payload(){
+  if(!state.start || !state.end) return null;
+  const tagIds = state.picked.length ? state.picked.slice() : ["art","history"];
+  return {
+    origin:{ lng:state.start.lng, lat:state.start.lat },
+    destination:{ lng:state.end.lng, lat:state.end.lat },
+    tagIds: tagIds,
+    tagOrder: tagIds.slice(),
+    effort: state.effort
+  };
+}
+async function generate(){
+  const body = payload();
+  if(!body){ toast("先选起点和终点", true); return; }
+  setBusy(true, "生成中…");
+  try{
+    const r = await fetch("/api/route/generate", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+    });
+    const data = await r.json();
+    if(!r.ok){ throw new Error((data.error && (data.error.code + " " + data.error.message)) || ("HTTP " + r.status)); }
+    state.result = data;
+    state.schemes = data.schemes || [];
+    state.active = 0;
+    state.excluded = [];
+    updateExcludeNote();
+    renderTabs(); renderDetail(); drawScheme(0); renderStats();
+    $("#replan").disabled = !state.schemes.length;
+    if(data.status !== "success") toast("结果为 " + data.status + "，请看校验信息", true);
+    else toast("已生成 " + state.schemes.length + " 条方案");
+  }catch(err){
+    toast("生成失败：" + err.message, true);
+  }finally{
+    setBusy(false);
+  }
+}
+async function replan(){
+  const s = state.schemes[state.active];
+  if(!s || !s.waypoints || !s.waypoints.length) return;
+  const last = s.waypoints[s.waypoints.length - 1];
+  s.waypoints.forEach(w => { if(w.poiId && !state.excluded.includes(w.poiId)) state.excluded.push(w.poiId); });
+  const body = payload() || {};
+  const req = Object.assign({}, body, {
+    origin:{ lng:last.lng, lat:last.lat },
+    excludeIds: state.excluded.slice()
+  });
+  setBusy(true, "重新规划中…");
+  try{
+    const r = await fetch("/api/route/replan", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(req)
+    });
+    const data = await r.json();
+    if(!r.ok) throw new Error((data.error && (data.error.code + " " + data.error.message)) || ("HTTP " + r.status));
+    state.result = data;
+    state.schemes = data.schemes || [];
+    state.active = 0;
+    state.start = { lng:last.lng, lat:last.lat, label:last.name };
+    renderSelects(); drawEndpoints();
+    renderTabs(); renderDetail(); drawScheme(0); renderStats();
+    updateExcludeNote();
+    toast("已排除 " + state.excluded.length + " 个到过的点");
+  }catch(err){
+    toast("重新规划失败：" + err.message, true);
+  }finally{ setBusy(false); }
+}
+function setBusy(busy, text){
+  const btn = $("#go");
+  btn.disabled = busy;
+  btn.textContent = busy ? (text || "处理中…") : "生成三条路线";
+}
+function updateExcludeNote(){
+  const n = state.excluded.length;
+  $("#excludeNote").textContent = n ? "已排除 " + n + " 个到过的点位" : "";
+}
+
+/* ================= 结果渲染 ================= */
+function renderTabs(){
+  const box = $("#tabs");
+  if(!state.schemes.length){ box.innerHTML = ""; return; }
+  box.innerHTML = state.schemes.map((s, i) => `
+    <button class="tab ${i === state.active ? "on" : ""}" data-mode="${s.mode}" data-i="${i}">
+      <span class="bar"></span>
+      <div class="t-name">${MODE_LABEL[s.mode] || s.mode}<span>${s.waypointCount} 个点</span></div>
+      <div class="t-main">${fmtKm(s.distanceM)}</div>
+      <div class="t-sub">${fmtDur(s.durationS)} · ${s.difficulty}</div>
+    </button>`).join("");
+  $$(".tab", box).forEach(b => b.addEventListener("click", () => {
+    state.active = +b.dataset.i;
+    renderTabs(); renderDetail(); drawScheme(state.active);
+  }));
+}
+function srcBadge(src){
+  const cls = src === "amap" ? "good" : (src === "mixed" ? "warn" : "bad");
+  const txt = src === "amap" ? "折线：高德真实路径" : (src === "mixed" ? "折线：部分降级直线" : "折线：直线估算");
+  return `<span class="badge ${cls}">${txt}</span>`;
+}
+function renderDetail(){
+  const area = $("#resultArea");
+  if(!state.schemes.length){
+    area.innerHTML = '<div class="empty">这次没有生成出方案<br>换个起终点或标签再试</div>';
+    return;
+  }
+  const s = state.schemes[state.active];
+  const pts = s.polyline ? s.polyline.length : 0;
+  area.innerHTML = `
+    <div class="reason">
+      <div class="lead">推荐理由</div>
+      <div>${s.reason || "—"}</div>
+    </div>
+    <div class="legend">
+      ${srcBadge(s.polylineSource)}
+      <span class="badge">折线 ${pts} 个点</span>
+      <span class="badge">绕路系数 ${(s.detourRatio || 1).toFixed(2)}</span>
+      <span class="badge">步行 ${fmtDur(s.walkS)}</span>
+      <span class="badge">停留 ${fmtDur(s.stayS)}</span>
+      ${s.crossing && s.crossing.isCrossing ? `<span class="badge warn">跨江：${s.crossing.type}</span>` : ""}
+    </div>
+    <div class="stops">
+      ${(s.waypoints || []).map(w => `
+        <div class="stop">
+          <div class="seq">${w.seq}</div>
+          <div>
+            <div class="nm">${w.name}</div>
+            <div class="meta">${w.typeName || "点位"}${w.address ? " · " + w.address : ""} · 评分 ${fmtRating(w.rating)}</div>
+            <div class="meta">建议停留 ${w.stayMinutes} 分钟 · 来源 ${w.source}</div>
+          </div>
+          <div class="rt">+${(w.distanceFromPrevM/1000).toFixed(1)} km</div>
+        </div>`).join("")}
+    </div>
+    ${renderStatsHtml()}
+  `;
+}
+function renderStats(){
+  const area = $("#resultArea");
+  if(!state.schemes.length) return;
+  const old = $("#statsBlock");
+  if(old) old.remove();
+  area.insertAdjacentHTML("beforeend", renderStatsHtml());
+}
+function renderStatsHtml(){
+  const res = state.result || {};
+  const routing = res.routing || {};
+  const val = res.validation || {};
+  const fail = routing.failedLegs || 0;
+  const straight = routing.straightLegs || 0;
+  return `
+    <div id="statsBlock">
+      <div class="stats">
+        <div class="stat"><div class="k">校验</div><div class="v">${val.passed ? "通过" : "有丢弃"} · 丢 ${val.dropped ?? 0}</div></div>
+        <div class="stat"><div class="k">高德调用</div><div class="v">${routing.calls ?? res.apiCalls ?? "—"} 次</div></div>
+        <div class="stat"><div class="k">缓存命中</div><div class="v">${routing.cacheHits ?? "—"} 段</div></div>
+        <div class="stat"><div class="k">失败降级</div><div class="v" style="color:${fail? "var(--bad)":"var(--ok)"}">${fail} 段</div></div>
+        <div class="stat"><div class="k">太短走直线</div><div class="v">${straight} 段</div></div>
+      </div>
+      <details class="raw">
+        <summary>查看本次请求的原始统计（答辩可展示）</summary>
+        <pre>${JSON.stringify({status:res.status, validation:res.validation, routing:res.routing, apiCalls:res.apiCalls}, null, 2)}</pre>
+      </details>
+    </div>`;
+}
+function drawScheme(i){
+  const s = state.schemes[i];
+  if(!map || !s) return;
+  clearLayers();
+  drawEndpoints();
+  const line = (s.polyline || []).map(p => toLatLng(p[0], p[1]));
+  if(line.length > 1){
+    const casing = L.polyline(line, {color:"#fbf8f2", weight:9, opacity:.9, lineJoin:"round"}).addTo(map);
+    casing.__kind = "route"; state.layers.push(casing);
+    const pl = L.polyline(line, {color:MODE_COLOR[s.mode] || "#3d6b7d", weight:4.5, opacity:.95, lineJoin:"round"}).addTo(map);
+    pl.__kind = "route"; state.layers.push(pl);
+    map.fitBounds(pl.getBounds(), {padding:[36,36]});
+  }
+  (s.waypoints || []).forEach(w => {
+    const m = L.marker(toLatLng(w.lng, w.lat), {icon:numIcon(w.seq, MODE_COLOR[s.mode] || "#3d6b7d", true), zIndexOffset:400})
+      .addTo(map)
+      .bindPopup(`<b>${w.name}</b><br>${w.typeName || ""}${w.address ? "<br>" + w.address : ""}<br>评分 ${fmtRating(w.rating)} · 停留 ${w.stayMinutes} 分钟`);
+    m.__kind = "poi"; state.markers.push(m);
+  });
+  const src = (s.waypoints || []).some(w => w.source && w.source !== "seed") ? "mixed" : (s.polylineSource || "—");
+  $("#hSrc").textContent = s.polylineSource || src;
+}
+
+/* ================= 健康检查 ================= */
+async function loadHealth(){
+  try{
+    const h = await (await fetch("/api/health")).json();
+    $("#hDot").className = "status-dot " + (h.ok ? "up" : "off");
+    $("#hTxt").textContent = h.ok ? "正常" : "异常";
+    if(h.poi && h.poi.total) $("#hPoi").textContent = h.poi.total;
+  }catch(err){
+    $("#hDot").className = "status-dot off";
+    $("#hTxt").textContent = "未启动";
+  }
+}
+
+/* ================= 启动 ================= */
+document.addEventListener("DOMContentLoaded", () => {
+  initMap();
+  loadTags();
+  loadHealth();
+  state.start = { lng:114.3608, lat:30.5387, label:"武汉大学（桂园门）" };
+  state.end   = { lng:114.3165, lat:30.5497, label:"昙华林" };
+  renderSelects(); bindPresets(); bindPick(); drawEndpoints();
+
+  $$("#effort button").forEach(b => b.addEventListener("click", () => {
+    state.effort = b.dataset.v;
+    $$("#effort button").forEach(x => x.classList.toggle("on", x === b));
+  }));
+  $$(".quick button").forEach(b => b.addEventListener("click", () => {
+    $("#query").value = b.dataset.q;
+  }));
+  $("#go").addEventListener("click", generate);
+  $("#replan").addEventListener("click", replan);
+  $("#query").addEventListener("keydown", e => {
+    if(e.key === "Enter" && (e.ctrlKey || e.metaKey)) detectIntent();
+  });
+  $("#query").addEventListener("blur", () => { if($("#query").value.trim()) detectIntent(); });
+});
+</script>
+</body>
+</html>

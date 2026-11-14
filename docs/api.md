@@ -190,7 +190,7 @@
 
 ## 十、9　GET /api/health
 
-返回 `{ "ok": true, "llm": "off", "amap": "up", "keyPool": { "total": 1, "alive": 1, "calls": 16 }, "budget": { "apiCallBudget": 45 } }`
+返回 `{ "ok": true, "llm": "off", "amap": "up", "keyPool": { "total": 1, "alive": 1, "calls": 16 }, "budget": { "apiCallBudget": 45 }, "poi": { "total": 244, "withRating": 191, "byTag": { "art": 70 } } }`
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
@@ -198,6 +198,13 @@
 | amap | string | `up` 表示高德 Key 可用；`down` 表示不可用 |
 | keyPool.alive | integer | 当前可用 Key 数 |
 | budget.apiCallBudget | integer | 单次生成允许的高德调用上限 |
+| poi.total | integer | 种子库点位总数 |
+| poi.withRating | integer | 带评分的点位数 |
+| poi.byTag | object | 各标签点位数量（`tagId → count`） |
+
+## 附：本地演示页
+
+后端启动后打开 `http://127.0.0.1:8000/demo` 即可使用；页面与接口同源，不需要额外服务、不需要高德 JS Key。
 
 ## 十一、10　POST /api/intent
 
