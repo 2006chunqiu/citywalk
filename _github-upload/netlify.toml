@@ -1,0 +1,26 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# /api/deepseek/*  ->  Netlify Function
+[[redirects]]
+  from = "/api/deepseek/*"
+  to = "/.netlify/functions/deepseek/:splat"
+  status = 200
+  force = true
+
+# /api/amapgeo/*  ->  Netlify Function
+[[redirects]]
+  from = "/api/amapgeo/*"
+  to = "/.netlify/functions/amapgeo/:splat"
+  status = 200
+  force = true
+
+# 单页应用兜底（必须放最后）
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
