@@ -28,6 +28,7 @@
 | 8 | GET | `/api/share/{token}` | 读取分享快照（只读） |
 | 9 | GET | `/api/health` | 健康检查与降级状态 |
 | 10 | POST | `/api/intent` | 一句话需求转兴趣标签 |
+| 11 | GET | `/api/geo/geocode` | 文字地址转坐标 |
 
 ## 二、1　GET /api/tips
 
@@ -221,21 +222,57 @@
 返回：
 
 ```json
-{ "tagIds": ["art", "history", "local", "photo"] }
+{ "tagIds": ["art", "history", "local", "photo"], "source": "rule" }
 ```
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | tagIds | string[] | 最多 4 个，取值见 `/api/tags`；无法识别时返回空数组 |
+| source | string | `rule`＝词表命中；`llm`＝词表命中不足 2 个、且配置了 `LLM_API_KEY`，由模型补 |
 
-说明：采用关键词匹配，不调用大模型；前端拿到后可直接作为 `generate` 的 `tagIds`。
+说明：词表优先，不调用大模型；仅在词表命中少于 2 个且启用 LLM 时才问模型。未配置 Key 时恒为 `rule`。
 
-## 十二、错误码
+## 十二、11　GET /api/geo/geocode
+
+文字地址 → 坐标。前端把「武汉大学」「昙华林」这类输入换成 `lng/lat` 用这个。
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| address | string | 是 | 至少 2 个字符；支持常见简称（武大 / 华科 / 华师 / 华农 / 地大 / 理工 / 财大） |
+| city | string | 否 | 默认 `武汉` |
+
+返回：
+
+```json
+{
+  "name": "湖北省武汉市武昌区武汉大学(澄波门)",
+  "lng": 114.357777,
+  "lat": 30.543913,
+  "level": "兴趣点",
+  "adcode": "420106"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| name | string | 高德返回的标准地址 |
+| lng / lat | number | GCJ-02 |
+| level | string | 高德地点级别（兴趣点 / 道路 / 村庄…） |
+| adcode | string | 行政区编码 |
+
+错误：`400 INVALID_ADDRESS`（少于 2 字）、`404 GEOCODE_NOT_FOUND`（没有匹配，含乱写地址）、`502`（高德其他错误）、`503 ALL_KEYS_EXHAUSTED`。
+
+说明：高德对无意义字符串会模糊返回一个地点（如「火星基地xyz」→ 黄陂某村），后端做了字符重合校验，对不上就按没找到处理，避免把起点定到几十公里外。
+
+## 十三、错误码
 
 | code | 含义 | HTTP |
 |---|---|---|
 | INVALID_DISTANCE | 起终点过近或过远 | 400 |
 | SAME_POINT | 起终点相同 | 400 |
+| INVALID_ADDRESS | 地址少于 2 个字符 | 400 |
+| GEOCODE_NOT_FOUND | 地址没有匹配结果 | 404 |
+| INVALID_REQUEST | 请求参数校验失败（统一错误结构） | 422 |
 | NO_CANDIDATE | 该区域无可推荐点位 | 200，status=fail |
 | ALL_KEYS_EXHAUSTED | Key 池全部不可用 | 200，status=degraded |
 | SHARE_EXPIRED | 分享链接失效 | 404 |
