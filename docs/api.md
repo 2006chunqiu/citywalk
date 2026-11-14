@@ -30,6 +30,8 @@
 | 10 | POST | `/api/intent` | 一句话需求转兴趣标签 |
 | 11 | GET | `/api/geo/geocode` | 文字地址转坐标 |
 
+> 另有 `GET /s/{token}` 分享页（HTML，不是 JSON 接口），前端分享按钮复制出来的链接就是它。
+
 ## 二、1　GET /api/tips
 
 | 参数 | 类型 | 必填 | 说明 |
