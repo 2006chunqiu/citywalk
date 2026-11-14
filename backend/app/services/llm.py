@@ -93,7 +93,7 @@ async def tags_from_query(text: str) -> list[str] | None:
 
 
 async def polish_schemes(result: dict) -> dict:
-    """把三条方案的 reason 换成有画面的一句话。
+    """给三条方案起短名、把 reason 换成有画面的一句话。
 
     只改文字，不动任何数字/坐标/点位；失败原样返回。
     """
@@ -111,6 +111,7 @@ async def polish_schemes(result: dict) -> dict:
             {
                 "index": i,
                 "mode": s.get("mode"),
+                "title": s.get("title"),
                 "km": round((s.get("distanceM") or 0) / 1000, 1),
                 "minutes": round((s.get("durationS") or 0) / 60),
                 "detour": s.get("detourRatio"),
@@ -119,21 +120,65 @@ async def polish_schemes(result: dict) -> dict:
         )
 
     system = (
-        "你在为武汉 City Walk 的三条备选路线写推荐理由，每条一句中文，不超过 45 字。\n"
-        "只能使用用户给出的公里数、分钟数、站点名，不得新增任何地名、店铺、事实或数字。\n"
-        "语气自然、有画面，但不要夸张。返回 JSON：{\"reasons\": [\"第一句\", \"第二句\", \"第三句\"]}"
+        "你在为武汉 City Walk 的三条备选路线起短名、写推荐理由。\n"
+        "每条短名 3~7 个汉字，像「老城慢走线」「江边吹风线」，要体现路线气质；"
+        "每条理由一句中文，不超过 45 字。\n"
+        "只能使用用户给出的公里数、分钟数、站点名和已有标题，"
+        "不得新增任何地名、店铺、事实或数字。\n"
+        '只返回 JSON：{"routes": [{"title": "短名", "reason": "一句话"}, ...]}'
     )
     user = json.dumps({"routes": lines}, ensure_ascii=False)
 
     data = await _chat_json(system, user, temperature=0.6)
-    reasons = (data or {}).get("reasons")
-    if not isinstance(reasons, list) or len(reasons) != len(schemes):
+    routes = (data or {}).get("routes")
+    if not isinstance(routes, list) or len(routes) != len(schemes):
         return result
 
-    for scheme, text in zip(schemes, reasons):
-        text = str(text).strip()
+    for scheme, item in zip(schemes, routes):
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip().replace("\n", "")
+        if 2 <= len(title) <= 12:
+            scheme["titleAuto"] = scheme.get("title")
+            scheme["title"] = title
+        text = str(item.get("reason", "")).strip()
         if text:
             scheme["reasonLlm"] = scheme.get("reason")
             scheme["reason"] = text
     result["llm"] = "on"
     return result
+
+
+def _fallback_share_text(scheme: dict) -> str:
+    title = scheme.get("title") or "武汉 City Walk"
+    km = round((scheme.get("distanceM") or 0) / 1000, 1)
+    stops = [w.get("name", "") for w in scheme.get("waypoints", []) if w.get("name")]
+    if stops:
+        return f"我走了条 {km} 公里的「{title}」，从{stops[0]}到{stops[-1]}，一共 {len(stops)} 站。"
+    return f"我走了条 {km} 公里的「{title}」。"
+
+
+async def share_text(scheme: dict) -> str:
+    """写一句分享文案；不配 Key 时退回固定模板。"""
+    fallback = _fallback_share_text(scheme)
+    if not enabled():
+        return fallback
+
+    payload = {
+        "title": scheme.get("title") or "武汉 City Walk",
+        "km": round((scheme.get("distanceM") or 0) / 1000, 1),
+        "minutes": round((scheme.get("durationS") or 0) / 60),
+        "stops": [w.get("name", "") for w in scheme.get("waypoints", [])],
+    }
+    system = (
+        "你在写一条武汉 City Walk 的朋友圈分享文案，一句话，不超过 45 字。\n"
+        "只能使用给出的路线名、公里数、分钟数和站点名，不得新增任何地名、店铺、事实或数字；"
+        "不要加链接，不要夸张。返回 JSON：{\"text\": \"...\"}"
+    )
+    data = await _chat_json(
+        system, json.dumps(payload, ensure_ascii=False), temperature=0.75
+    )
+    text = str((data or {}).get("text", "")).strip().replace("\n", " ")
+    if 4 <= len(text) <= 80:
+        return text
+    return fallback

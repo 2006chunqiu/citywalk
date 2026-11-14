@@ -23,6 +23,25 @@ logger = logging.getLogger(__name__)
 
 MODE_LABEL = {"shortest": "最短路线", "max": "兴趣最大化", "balanced": "均衡"}
 
+# 路线短名：主标签定主题，模式定走法；LLM 开启时可被更自然的标题覆盖
+THEME_TITLE = {
+    "history": "老城",
+    "river": "江畔",
+    "food": "食味",
+    "local": "市井",
+    "art": "文艺",
+    "photo": "出片",
+    "park": "湖光",
+    "family": "亲子",
+}
+MODE_TITLE = {"shortest": "速览线", "max": "深度线", "balanced": "慢走线"}
+
+
+def _auto_title(tag_ids: list[str], mode: str) -> str:
+    key = tag_ids[0] if tag_ids else "history"
+    return f"{THEME_TITLE.get(key, '江城')}{MODE_TITLE.get(mode, '漫步线')}"
+
+
 # 分类码与展示名，用于合成候选点
 TYPES = [
     ("140400", "书店", ("art",), 15),
@@ -246,6 +265,7 @@ def build_schemes(
                 "waypointCount": len(chosen),
                 "detourRatio": round(distance_m / base_m, 2) if base_m else 1.0,
                 "difficulty": difficulty,
+                "title": _auto_title(tag_order, mode),
                 "reason": _reason(mode, distance_m, int(base_m), len(chosen)),
                 "polyline": [[round(x, 6), round(y, 6)] for x, y in path],
                 "waypoints": waypoints,

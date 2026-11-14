@@ -36,6 +36,7 @@ export interface Waypoint {
 export interface Scheme {
   schemeId: string;
   mode: "shortest" | "max" | "balanced";
+  title?: string;
   distanceM: number;
   durationS: number;
   walkS: number;
@@ -78,6 +79,13 @@ export interface GeocodeResult {
 export interface IntentResult {
   tagIds: TagId[];
   source?: "rule" | "llm";
+}
+
+export interface ShareResult {
+  token: string;
+  url: string;
+  text: string;
+  expireAt?: string | null;
 }
 
 export class BackendError extends Error {
@@ -162,5 +170,12 @@ export function postReplan(body: {
   return request<GenerateResult>("/api/route/replan", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export function postShare(schemeId: string) {
+  return request<ShareResult>("/api/share", {
+    method: "POST",
+    body: JSON.stringify({ schemeId }),
   });
 }

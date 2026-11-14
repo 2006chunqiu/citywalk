@@ -128,7 +128,7 @@ export function schemeToRoute(scheme: Scheme, ctx: AdaptContext): Route {
 
   return {
     id: scheme.schemeId,
-    name: meta.name,
+    name: scheme.title ?? meta.name,
     subtitle: meta.subtitle,
     district: districtOf(last?.lng ?? 114.3, last?.lat ?? 30.59),
     themes: ctx.tagIds.map((t) => TAG_NAMES[t]),

@@ -1,10 +1,13 @@
+import { useState } from "react";
 import {
   ArrowUpRight,
   Clock3,
   Footprints,
   Lightbulb,
+  Loader2,
   MapPin,
   Navigation,
+  Share2,
   Signal,
   SunMedium,
   X,
@@ -12,7 +15,34 @@ import {
 import { CoverImage } from "@/components/CoverImage";
 import { StopThumb } from "@/components/StopThumb";
 import { amapMarkerUrl, type Route } from "@/data/routes";
+import { BackendError, postShare } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 局域网 HTTP 下 clipboard 可能不可用，走 execCommand 兜底
+  }
+  try {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    el.style.pointerEvents = "none";
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    const ok = document.execCommand("copy");
+    el.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
 
 interface RouteDetailProps {
   route: Route;
@@ -34,6 +64,31 @@ export function RouteDetail({
   open,
 }: RouteDetailProps) {
   const firstStop = route.stops[0];
+  const [sharing, setSharing] = useState(false);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+
+  const handleShare = async () => {
+    if (sharing) return;
+    setSharing(true);
+    setShareNote(null);
+    try {
+      const res = await postShare(route.id);
+      const url = `${window.location.origin}${res.url}`;
+      const payload = `${res.text}\n${url}`;
+      const copied = await copyText(payload);
+      if (copied) {
+        setShareNote("分享文案和链接已复制");
+      } else {
+        setShareNote("分享链接已生成，请手动复制");
+        window.prompt("复制分享文案", payload);
+      }
+    } catch (e) {
+      setShareNote(e instanceof BackendError ? e.message : "生成分享失败");
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
     <aside
       aria-hidden={!open}
@@ -212,7 +267,27 @@ export function RouteDetail({
         </div>
       </div>
 
+      {shareNote && (
+        <div className="shrink-0 border-t border-hairline bg-river/8 px-5 py-2 text-[10.5px] leading-relaxed text-river">
+          {shareNote}
+        </div>
+      )}
+
       <div className="flex shrink-0 items-center gap-2 border-t border-hairline bg-background/95 px-5 py-3.5 backdrop-blur">
+        <button
+          type="button"
+          onClick={handleShare}
+          disabled={sharing}
+          aria-label="分享这条路线"
+          className="flex h-10 shrink-0 items-center gap-1.5 rounded-full border border-hairline bg-background px-3.5 text-[11.5px] text-river transition hover:border-river/40 disabled:opacity-60"
+        >
+          {sharing ? (
+            <Loader2 className="size-3.5 animate-spin" strokeWidth={1.9} />
+          ) : (
+            <Share2 className="size-3.5" strokeWidth={1.9} />
+          )}
+          {sharing ? "生成中" : "分享"}
+        </button>
         {firstStop ? (
           <a
             href={amapMarkerUrl(firstStop)}

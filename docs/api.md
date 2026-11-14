@@ -116,6 +116,7 @@
 {
   "schemeId": "s_8f2a",
   "mode": "balanced",
+  "title": "老城慢走线",
   "distanceM": 6900,
   "durationS": 8160,
   "walkS": 5160,
@@ -134,6 +135,7 @@
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | mode | string | `shortest` / `max` / `balanced` |
+| title | string | 路线短名，如「老城慢走线」。默认按主标签 + 模式规则生成；`LLM_API_KEY` 开启时可能被模型改写，长度 2~12 字 |
 | difficulty | string | `easy` / `standard` / `deep` |
 | polyline | number[][] | `[[lng, lat], ...]`，**不是字符串**；真实步行路径通常 200～340 个点 |
 | polylineSource | string | `amap`＝全部段为高德真实路径；`mixed`＝部分段降级为直线；`estimated`＝全部为直线估算 |
@@ -185,11 +187,26 @@
 
 请求 `{ "schemeId": "s_8f2a" }`
 
-返回 `{ "token": "8fK2mQ...", "url": "https://.../s/8fK2mQ...", "expireAt": "2026-12-21T00:00:00Z" }`
+返回：
+
+```json
+{
+  "token": "8fK2mQ...",
+  "url": "/s/8fK2mQ...",
+  "text": "我走了条 7.0 公里的「老城慢走线」，从工学部集贸市场到摄胶纪念馆，一共 3 站。",
+  "expireAt": null
+}
+```
+
+`url` 是相对路径，前端用 `window.location.origin + url` 拼成可访问链接。`text` 是分享语：`LLM_API_KEY` 开启时由模型写，失败/未配置时退回固定模板。
 
 ## 九、8　GET /api/share/{token}
 
-返回与 `/api/route/{schemeId}` 相同结构。token 无效或过期返回 `404` + `{ "error": { "code": "SHARE_EXPIRED" } }`。
+返回与 `/api/route/{schemeId}` 相同结构。token 无效返回 `404` + `{ "error": { "code": "SHARE_EXPIRED" } }`。
+
+## 九、8.1　GET /s/{token}（HTML 分享页）
+
+不是 JSON 接口，给微信/手机浏览器直接打开的可读页面：路线名、公里数、预计分钟、途经站点列表、每站高德导航链接。token 无效返回 404 HTML。前端分享按钮复制出来的链接就是它。
 
 ## 十、9　GET /api/health
 
