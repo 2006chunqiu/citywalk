@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -31,6 +32,19 @@ async def api_error_handler(_request: Request, exc: ApiError):
     return JSONResponse(
         status_code=exc.status,
         content={"error": {"code": exc.code, "message": exc.message}},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError):
+    """参数校验失败也走统一错误结构，避免前端拿到 FastAPI 默认的 detail 数组。"""
+    first = (exc.errors() or [{}])[0]
+    parts = [str(p) for p in (first.get("loc") or []) if p not in ("body", "query", "path")]
+    field = ".".join(parts) or "请求参数"
+    msg = first.get("msg") or "参数不合法"
+    return JSONResponse(
+        status_code=422,
+        content={"error": {"code": "INVALID_REQUEST", "message": f"{field}：{msg}"}},
     )
 
 

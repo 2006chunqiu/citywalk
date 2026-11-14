@@ -29,6 +29,18 @@ BACKOFF_SECONDS = 0.6
 # 不会因为切换 Key 而好转的错误，直接抛出
 FATAL_REPORT = {"10001", "10009"}
 
+# 常见口语简称 → 全称。高德正地理编码对 2 字简称会直接返回 30001。
+GEOCODE_ALIASES = {
+    "武大": "武汉大学",
+    "华科": "华中科技大学",
+    "华师": "华中师范大学",
+    "华农": "华中农业大学",
+    "地大": "中国地质大学",
+    "理工": "武汉理工大学",
+    "财大": "中南财经政法大学",
+    "中南财大": "中南财经政法大学",
+}
+
 
 class AmapError(Exception):
     def __init__(self, infocode: str, info: str):
@@ -163,7 +175,14 @@ async def regeo(lng: float, lat: float) -> dict:
 
 async def geocode(address: str, city: str = "武汉") -> dict:
     """地址 → 坐标（正地理编码）。找不到时抛 NO_RESULT，由调用方转成 404。"""
-    data = await _call("/v3/geocode/geo", {"address": address, "city": city})
+    address = GEOCODE_ALIASES.get(address.strip(), address.strip())
+    try:
+        data = await _call("/v3/geocode/geo", {"address": address, "city": city})
+    except AmapError as exc:
+        # 30001 = ENGINE_RESPONSE_DATA_ERROR，高德对过短或无结果地址的统一返回，按「没找到」处理
+        if exc.infocode == "30001":
+            raise AmapError("NO_RESULT", "没有匹配到该地点") from exc
+        raise
     geos = data.get("geocodes") or []
     if not geos:
         raise AmapError("NO_RESULT", "没有匹配到该地点")
@@ -172,8 +191,14 @@ async def geocode(address: str, city: str = "武汉") -> dict:
     if "," not in loc:
         raise AmapError("NO_RESULT", "该地点没有坐标")
     lng_s, lat_s = loc.split(",")[:2]
+    name = geo.get("formatted_address") or address
+    # 高德正地理编码对无意义字符串也会模糊返回一个地点（例如「火星基地xyz」→ 黄陂某村），
+    # 这里做字符重合校验：输入含中文时，返回地址至少要含其中一个汉字，否则视为没找到。
+    cn_chars = [c for c in address if "\u4e00" <= c <= "\u9fff"]
+    if cn_chars and not any(c in name for c in cn_chars):
+        raise AmapError("NO_RESULT", "没有匹配到该地点")
     return {
-        "name": geo.get("formatted_address") or address,
+        "name": name,
         "lng": float(lng_s),
         "lat": float(lat_s),
         "level": str(geo.get("level", "")),
