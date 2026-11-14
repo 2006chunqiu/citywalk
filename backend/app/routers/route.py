@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from ..algo.scoring import haversine_m
 from ..errors import ApiError
 from ..schemas import GenerateRequest, ReplanRequest
-from ..services import mock_data, routing, store, validate
+from ..services import llm, mock_data, routing, store, validate
 
 router = APIRouter(prefix="/api/route", tags=["route"])
 
@@ -40,6 +40,8 @@ async def generate(req: GenerateRequest):
     result = validate.validate_schemes(result)
     # 真实步行折线（失败自动降级为直线，接口不会 500）
     result = await routing.attach_walking(result)
+    # 可选：让模型把推荐理由写得更像人话（没配 key 时原样返回）
+    result = await llm.polish_schemes(result)
     store.save_result(result)
     return result
 

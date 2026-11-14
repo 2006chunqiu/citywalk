@@ -161,6 +161,26 @@ async def regeo(lng: float, lat: float) -> dict:
     }
 
 
+async def geocode(address: str, city: str = "武汉") -> dict:
+    """地址 → 坐标（正地理编码）。找不到时抛 NO_RESULT，由调用方转成 404。"""
+    data = await _call("/v3/geocode/geo", {"address": address, "city": city})
+    geos = data.get("geocodes") or []
+    if not geos:
+        raise AmapError("NO_RESULT", "没有匹配到该地点")
+    geo = geos[0]
+    loc = str(geo.get("location", ""))
+    if "," not in loc:
+        raise AmapError("NO_RESULT", "该地点没有坐标")
+    lng_s, lat_s = loc.split(",")[:2]
+    return {
+        "name": geo.get("formatted_address") or address,
+        "lng": float(lng_s),
+        "lat": float(lat_s),
+        "level": str(geo.get("level", "")),
+        "adcode": str(geo.get("adcode", "")),
+    }
+
+
 async def place_around(
     lng: float,
     lat: float,
