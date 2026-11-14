@@ -27,6 +27,7 @@
 | 7 | POST | `/api/share` | 生成分享链接 |
 | 8 | GET | `/api/share/{token}` | 读取分享快照（只读） |
 | 9 | GET | `/api/health` | 健康检查与降级状态 |
+| 10 | POST | `/api/intent` | 一句话需求转兴趣标签 |
 
 ## 二、1　GET /api/tips
 
@@ -81,7 +82,15 @@
   "status": "success",
   "validation": { "passed": true, "dropped": 0, "reasons": [] },
   "schemes": [ Scheme, Scheme, Scheme ],
-  "apiCalls": 28
+  "apiCalls": 7,
+  "routing": {
+    "provider": "amap",
+    "calls": 7,
+    "cacheHits": 5,
+    "straightLegs": 0,
+    "failedLegs": 0,
+    "budgetExhausted": false
+  }
 }
 ```
 
@@ -93,6 +102,12 @@
 | validation.reasons | string[] | 丢弃原因 |
 | schemes | Scheme[] | 三条方案，顺序固定：shortest、max、balanced |
 | apiCalls | integer | 本次生成的外部调用次数（便于验收核对预算） |
+| routing.provider | string | 折线来源服务商，目前固定 `amap` |
+| routing.calls | integer | 实际调用高德步行规划的段数 |
+| routing.cacheHits | integer | 命中进程内折线缓存的段数（不消耗配额） |
+| routing.straightLegs | integer | 因距离过短而直接连直线的段数 |
+| routing.failedLegs | integer | 调用失败、降级为直线的段数（正常应为 0） |
+| routing.budgetExhausted | boolean | 是否因调用预算耗尽而提前停止 |
 
 ### Scheme 结构
 
@@ -109,6 +124,7 @@
   "difficulty": "standard",
   "reason": "比最短路线多走 1.3 公里，但多了 2 个历史建筑点位。",
   "polyline": [[114.361, 30.539], [114.358, 30.541]],
+  "polylineSource": "amap",
   "waypoints": [ Waypoint ],
   "crossing": { "isCrossing": false, "type": null, "distanceM": 0, "extraMinutes": 0 }
 }
@@ -118,7 +134,8 @@
 |---|---|---|
 | mode | string | `shortest` / `max` / `balanced` |
 | difficulty | string | `easy` / `standard` / `deep` |
-| polyline | number[][] | `[[lng, lat], ...]`，**不是字符串** |
+| polyline | number[][] | `[[lng, lat], ...]`，**不是字符串**；真实步行路径通常 200～340 个点 |
+| polylineSource | string | `amap`＝全部段为高德真实路径；`mixed`＝部分段降级为直线；`estimated`＝全部为直线估算 |
 | crossing.type | string\|null | `bridge` / `ferry` / `metro` / null |
 
 ### Waypoint 结构
@@ -173,9 +190,40 @@
 
 ## 十、9　GET /api/health
 
-返回 `{ "ok": true, "llm": "up", "amap": "up", "keyPool": { "total": 6, "alive": 6 } }`
+返回 `{ "ok": true, "llm": "off", "amap": "up", "keyPool": { "total": 1, "alive": 1, "calls": 16 }, "budget": { "apiCallBudget": 45 } }`
 
-## 十一、错误码
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| llm | string | `off` 表示未配置大模型文案，走模板兜底 |
+| amap | string | `up` 表示高德 Key 可用；`down` 表示不可用 |
+| keyPool.alive | integer | 当前可用 Key 数 |
+| budget.apiCallBudget | integer | 单次生成允许的高德调用上限 |
+
+## 十一、10　POST /api/intent
+
+请求：
+
+```json
+{ "query": "想走点安静的老街拍拍照" }
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| query | string | 是 | 1～100 字 |
+
+返回：
+
+```json
+{ "tagIds": ["art", "history", "local", "photo"] }
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| tagIds | string[] | 最多 4 个，取值见 `/api/tags`；无法识别时返回空数组 |
+
+说明：采用关键词匹配，不调用大模型；前端拿到后可直接作为 `generate` 的 `tagIds`。
+
+## 十二、错误码
 
 | code | 含义 | HTTP |
 |---|---|---|
