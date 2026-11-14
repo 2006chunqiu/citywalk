@@ -18,7 +18,7 @@ export interface Stop {
   lat: number;
   stay: string;
   desc: string;
-  kind: "文保" | "街巷" | "过早" | "观景" | "咖啡" | "公园" | "码头" | "校园";
+  kind: string;
 }
 
 export interface Route {
@@ -26,7 +26,7 @@ export interface Route {
   name: string;
   subtitle: string;
   district: District;
-  themes: Theme[];
+  themes: string[];
   duration: number;
   distance: number;
   intensity: Intensity;
@@ -74,15 +74,10 @@ export const ROUTES: Route[] = [];
 export const TOTAL_STOPS = 0;
 
 
-export const coverUrl = (prompt: string) =>
-  `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
-    prompt
-  )}&image_size=landscape_4_3`;
+// 演示阶段不再依赖第三方文生图接口：封面用渐变，站点缩略图用类型文字兜底。
+export const coverUrl = (_prompt: string) => "";
 
-export const stopImageUrl = (stop: Stop) =>
-  `https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prompt=${encodeURIComponent(
-    `实景照片，武汉 ${stop.name}，${stop.desc}，真实街景，自然光，旅行摄影，高清细节`
-  )}&image_size=square`;
+export const stopImageUrl = (_stop: Stop) => "";
 
 export const amapMarkerUrl = (stop: Stop) =>
   `https://uri.amap.com/marker?position=${stop.lng},${stop.lat}&name=${encodeURIComponent(

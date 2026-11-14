@@ -69,14 +69,14 @@ export function AboutDialog({
         漫步江城
       </h2>
       <p className="mt-3 text-[12px] leading-[1.9] text-foreground/80">
-        一个为武汉做的 AI City Walk 路线规划器。告诉它起点、终点，或只是说一句"想走点安静的老街"，它会在武汉三镇为你画出一条能走的线。
+        一个为武汉做的 City Walk 路线推荐器。告诉它起点、终点，或只是说一句「想走点安静的老街」，它会在真实地点库里挑出途经点，再用高德步行路径把这条线走出来。
       </p>
 
       <div className="mt-4 grid grid-cols-3 gap-2 text-center">
         {[
-          { value: "AI", label: "实时生成" },
-          { value: "5", label: "武汉片区" },
-          { value: "∞", label: "条可能路线" },
+          { value: "244", label: "真实点位" },
+          { value: "8", label: "兴趣标签" },
+          { value: "3", label: "条备选路线" },
         ].map((item) => (
           <div
             key={item.label}
@@ -91,9 +91,9 @@ export function AboutDialog({
       </div>
 
       <div className="mt-4 space-y-1.5 border-t border-dashed border-hairline pt-4 text-[10.5px] leading-relaxed text-muted-foreground">
-        <p>地图组件基于开源项目 amapcn，地图服务与数据版权归高德地图所有。</p>
-        <p>路线由 DeepSeek 实时生成，站点坐标由高德地理编码解析，不作为精确导航依据。</p>
-        <p>摄影图片由 AI 生成，仅用于界面展示。</p>
+        <p>底图与步行路径来自高德地图，地图服务与数据版权归高德所有。</p>
+        <p>点位来自本地种子库（244 条），不让模型编造地点；模型只负责听懂一句话和写推荐理由。</p>
+        <p>封面与缩略图为本地渐变占位，不依赖外部图片服务。</p>
       </div>
 
       <p className="mt-4 font-display text-[11px] tracking-[0.2em] text-muted-foreground/70">

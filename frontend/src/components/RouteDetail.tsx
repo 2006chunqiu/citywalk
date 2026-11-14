@@ -206,7 +206,7 @@ export function RouteDetail({
 
           <p className="flex items-start gap-1.5 rounded-xl bg-secondary/60 px-3 py-2 text-[10.5px] leading-relaxed text-muted-foreground">
             <Lightbulb className="mt-0.5 size-3 shrink-0" strokeWidth={1.8} />
-            地图上的连线为路线示意，现场可随性穿行；出行前请核实场馆开放时间。
+            地图上的折线是高德真实步行路径，照着走即可；出行前请核实场馆开放时间。
           </p>
         </div>
       </div>

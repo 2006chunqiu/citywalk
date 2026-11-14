@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowUpRight,
   Loader2,
@@ -7,25 +7,39 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
-import type { MapRef } from "amapcn";
 import { Header } from "@/components/Header";
 import { RouteDetail } from "@/components/RouteDetail";
 import { MapView } from "@/components/MapView";
 import { AboutDialog } from "@/components/Dialogs";
 import { THEMES, INTENSITIES, type Route, type Theme, type Intensity } from "@/data/routes";
-import { generateRoutes, AiRouteError, type RouteRequest } from "@/lib/aiRoute";
-import { geocodeStops, GeocodeError } from "@/lib/geocode";
-import { buildWalkingPath } from "@/lib/directions";
+import {
+  BackendError,
+  geocodeAddress,
+  postGenerate,
+  postIntent,
+  type Effort,
+  type TagId,
+} from "@/lib/api";
+import { THEME_TAGS, schemeToPath, schemeToRoute } from "@/lib/adapt";
 import { cn } from "@/lib/utils";
 
-const amapKey = import.meta.env.VITE_AMAP_KEY || "";
-const amapSecurity = import.meta.env.VITE_AMAP_SECURITY_CODE || "";
-
-type GenStatus = "idle" | "loading" | "geocoding" | "done" | "error";
+type GenStatus = "idle" | "planning" | "done" | "error";
 
 interface GenError {
   code: string;
   message: string;
+  hint?: string;
+}
+
+const DEFAULT_START = "武汉大学";
+const DEFAULT_END = "昙华林";
+
+function toEffort(duration: string, intensity: Intensity | ""): Effort {
+  if (intensity === "轻松") return "easy";
+  if (intensity === "深度") return "deep";
+  if (duration === "2–3 小时") return "easy";
+  if (duration === "全天") return "deep";
+  return "normal";
 }
 
 const DURATION_OPTIONS = ["2–3 小时", "半日", "全天"] as const;
@@ -52,7 +66,7 @@ export default function App() {
   const pathCoords = paths[selected] ?? null;
   const [status, setStatus] = useState<GenStatus>("idle");
   const [error, setError] = useState<GenError | null>(null);
-  const [geocodeFailed, setGeocodeFailed] = useState(0);
+  const [trip, setTrip] = useState<{ from: string; to: string } | null>(null);
 
   const [activeStop, setActiveStop] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -60,7 +74,6 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [mobileView, setMobileView] = useState<"input" | "map">("input");
 
-  const mapRef = useRef<MapRef | null>(null);
   const [isMobile, setIsMobile] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -74,80 +87,64 @@ export default function App() {
     return () => query.removeEventListener("change", update);
   }, []);
 
-  useEffect(() => {
-    if (!isMobile || mobileView !== "map") return;
-    const timer = window.setTimeout(() => {
-      const map = mapRef.current;
-      if (!map) return;
-      map.resize();
-      map.setFitView(null, false, [150, 165, 40, 40]);
-    }, 160);
-    return () => window.clearTimeout(timer);
-  }, [isMobile, mobileView, route?.id]);
-
   const handleGenerate = async () => {
     setError(null);
-    setGeocodeFailed(0);
     setRoutes([]);
     setPaths([]);
     setSelected(0);
     setActiveStop(null);
+    setDetailOpen(false);
+    setStatus("planning");
 
-    const req: RouteRequest = {
-      start: start.trim() || undefined,
-      end: end.trim() || undefined,
-      theme: theme || undefined,
-      duration,
-      intensity: intensity || undefined,
-      freePrompt: freePrompt.trim() || undefined,
-    };
-
-    setStatus("loading");
-    let aiRoutes: Route[];
     try {
-      aiRoutes = await generateRoutes(req);
+      // 1. 文字地址 → 坐标（后端调高德地理编码）
+      const [from, to] = await Promise.all([
+        geocodeAddress(start.trim() || DEFAULT_START),
+        geocodeAddress(end.trim() || DEFAULT_END),
+      ]);
+
+      // 2. 主题 + 一句话需求 → 标签（词表优先，模型兜底）
+      let tags: TagId[] = theme ? THEME_TAGS[theme] ?? [] : [];
+      if (freePrompt.trim()) {
+        const intent = await postIntent(freePrompt.trim());
+        tags = Array.from(new Set([...tags, ...intent.tagIds]));
+      }
+      if (tags.length === 0) tags = ["history", "local"];
+      tags = tags.slice(0, 4);
+
+      // 3. 种子库召回 + 打分 + 高德真实步行折线，全在后端完成
+      const result = await postGenerate({
+        origin: { lng: from.lng, lat: from.lat },
+        destination: { lng: to.lng, lat: to.lat },
+        tagIds: tags,
+        effort: toEffort(duration, intensity),
+      });
+
+      if (!result.schemes?.length) {
+        throw new BackendError("NO_SCHEME", "后端没有返回可用路线。");
+      }
+
+      setTrip({ from: from.name, to: to.name });
+      setRoutes(
+        result.schemes.map((scheme) =>
+          schemeToRoute(scheme, { originName: from.name, tagIds: tags }),
+        ),
+      );
+      setPaths(result.schemes.map((scheme) => schemeToPath(scheme)));
+      setSelected(result.schemes.length > 2 ? 2 : 0);
+      setStatus("done");
+      if (isMobile) setMobileView("map");
     } catch (e) {
-      if (e instanceof AiRouteError) {
-        setError({ code: e.code, message: e.message });
+      if (e instanceof BackendError) {
+        setError({ code: e.code, message: e.message, hint: e.hint });
       } else {
-        setError({ code: "UNKNOWN", message: String(e) });
+        setError({
+          code: "UNKNOWN",
+          message: e instanceof Error ? e.message : String(e),
+        });
       }
       setStatus("error");
-      return;
     }
-
-    setStatus("geocoding");
-    let failedTotal = 0;
-    let geocodeError: string | null = null;
-    const located = await Promise.all(
-      aiRoutes.map(async (r) => {
-        try {
-          const { stops, failed } = await geocodeStops(r.stops);
-          failedTotal += failed;
-          return { ...r, stops };
-        } catch (e) {
-          // 地理编码整体失败也不阻塞，用占位坐标继续
-          if (e instanceof GeocodeError && !geocodeError) {
-            geocodeError = `地理编码失败：${e.message}。路线已生成但站点位置可能不准。`;
-          }
-          failedTotal += r.stops.length;
-          return r;
-        }
-      })
-    );
-    if (geocodeError) setError({ code: "GEOCODE", message: geocodeError });
-    setGeocodeFailed(failedTotal);
-
-    // 逐段调高德步行规划，让折线沿真实道路走；失败则回退直线
-    const walkingPaths = await Promise.all(
-      located.map((r) => buildWalkingPath(r.stops).catch(() => null))
-    );
-
-    setRoutes(located);
-    setPaths(walkingPaths);
-    setSelected(0);
-    setStatus("done");
-    if (isMobile) setMobileView("map");
   };
 
   const handleSelectRoute = (index: number) => {
@@ -163,10 +160,7 @@ export default function App() {
     }
   };
 
-  const canGenerate =
-    status !== "loading" &&
-    status !== "geocoding" &&
-    (start.trim() || end.trim() || theme || freePrompt.trim().length > 0);
+  const canGenerate = status !== "planning";
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -202,7 +196,7 @@ export default function App() {
                   告诉 AI 你想怎么走。
                 </h1>
                 <p className="mt-1.5 max-w-[300px] text-[10.5px] leading-[1.8] text-white/60">
-                  输入起点、终点或单纯说一句"想走点安静的老街"，DeepSeek 会在武汉三镇为你规划一条能走的路线。
+                  输入起点、终点，或说一句「想走点安静的老街」——点位从本地真实地点库里挑，路线按高德步行路径逐段计算。
                 </p>
               </section>
 
@@ -211,7 +205,7 @@ export default function App() {
                 <div className="mb-3 flex items-center gap-2">
                   <Sparkles className="size-3.5 text-clay" strokeWidth={1.9} />
                   <p className="text-[10px] tracking-[0.24em] text-muted-foreground">
-                    AI 路线规划
+                    路线规划
                   </p>
                 </div>
 
@@ -317,15 +311,10 @@ export default function App() {
                         : "cursor-not-allowed bg-secondary text-muted-foreground"
                     )}
                   >
-                    {status === "loading" ? (
+                    {status === "planning" ? (
                       <>
                         <Loader2 className="size-4 animate-spin" strokeWidth={1.9} />
-                        AI 正在规划路线…
-                      </>
-                    ) : status === "geocoding" ? (
-                      <>
-                        <Loader2 className="size-4 animate-spin" strokeWidth={1.9} />
-                        正在定位站点…
+                        正在挑选点位 · 计算步行路线…
                       </>
                     ) : (
                       <>
@@ -342,10 +331,8 @@ export default function App() {
                 <section className="mt-3 rounded-[18px] border border-clay/30 bg-clay/8 px-4 py-3 text-[11.5px] leading-relaxed text-clay">
                   <p className="font-display text-[12px]">路线生成失败</p>
                   <p className="mt-1 opacity-90">{error.message}</p>
-                  {error.code === "MISSING_KEY" && (
-                    <p className="mt-1 text-[10.5px] opacity-70">
-                      需要在项目根目录的 <code>.env</code> 里配置 <code>DEEPSEEK_API_KEY</code> 和 <code>AMAP_WEB_KEY</code>，然后重启 dev server。
-                    </p>
+                  {error.hint && (
+                    <p className="mt-1 text-[10.5px] opacity-70">{error.hint}</p>
                   )}
                 </section>
               )}
@@ -356,7 +343,7 @@ export default function App() {
                   <div className="mb-2 mt-2 flex items-end justify-between">
                     <div>
                       <p className="text-[9px] tracking-[0.26em] text-muted-foreground/70">
-                        AI 为你规划 · {routes.length} 条备选
+                        {trip ? `${trip.from} → ${trip.to}` : "为你规划"} · {routes.length} 条备选
                       </p>
                       <h2 className="mt-1 font-display text-[17px] tracking-wide">
                         {route.name}
@@ -408,12 +395,6 @@ export default function App() {
                   )}
 
                   <RouteMiniCard route={route} onOpen={() => setDetailOpen(true)} />
-
-                  {geocodeFailed > 0 && (
-                    <p className="mt-2 text-[10.5px] leading-relaxed text-clay/80">
-                      有 {geocodeFailed} 个站点未在地图上找到，已用占位位置代替。
-                    </p>
-                  )}
                 </section>
               )}
 
@@ -421,12 +402,12 @@ export default function App() {
               {status === "idle" && !route && (
                 <section className="mt-4 rounded-[18px] border border-dashed border-hairline px-4 py-6 text-center text-[11px] leading-relaxed text-muted-foreground/80">
                   <RouteIcon className="mx-auto mb-2 size-5 text-muted-foreground/60" strokeWidth={1.7} />
-                  左边表单里随便填点什么，AI 会在右边地图上画出一条路线。
+                  左边表单里随便填点什么，右边地图就会画出一条能走的路线。
                 </section>
               )}
 
               <p className="mt-6 border-t border-dashed border-hairline pt-4 text-[10px] leading-relaxed text-muted-foreground/75">
-                路线由 DeepSeek 实时生成，站点位置由高德地图地理编码服务解析。出行前请核实场馆开放时间。
+                点位来自本地种子库（244 条武汉精选地点），步行路径由高德地图逐段计算。出行前请核实场馆开放时间。
               </p>
             </div>
           </div>
@@ -444,9 +425,6 @@ export default function App() {
             path={pathCoords}
             activeStop={activeStop}
             onSelectStop={handleSelectStop}
-            amapKey={amapKey}
-            securityJsCode={amapSecurity}
-            mapRef={mapRef}
             onError={() => setMapError(true)}
           />
 
@@ -454,7 +432,7 @@ export default function App() {
             <>
               <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-hairline bg-background/85 px-3 py-1.5 text-[10.5px] text-muted-foreground shadow-sm backdrop-blur">
                 <span className="size-1.5 rounded-full bg-clay" />
-                {route.district} · {route.stops.length} 站 · {route.distance}km · AI 规划
+                {route.district} · {route.stops.length} 站 · {route.distance}km · 高德步行路径
               </div>
 
               {!detailOpen && (
@@ -531,7 +509,7 @@ export default function App() {
           active={mobileView === "input"}
           onClick={() => setMobileView("input")}
           icon={<RouteIcon className="size-3.5" strokeWidth={1.9} />}
-          label="AI 路线"
+          label="路线"
         />
         <MobileTab
           active={mobileView === "map"}
@@ -632,9 +610,9 @@ function EmptyMapHint() {
         <div className="mx-auto mb-2 grid size-10 place-items-center rounded-xl bg-river/10 text-river">
           <MapPinned className="size-4" strokeWidth={1.7} />
         </div>
-        <p className="font-display text-[14px]">在左边告诉 AI 你想怎么走</p>
+        <p className="font-display text-[14px]">说一句话，开始一条 City Walk</p>
         <p className="mt-1 text-[10.5px] leading-relaxed text-muted-foreground">
-          输入起点、终点或单纯说一句需求，AI 会在武汉三镇为你规划一条能走的路线。
+          点位来自 244 条武汉真实地点，路线用高德步行路径逐段计算。
         </p>
       </div>
     </div>
