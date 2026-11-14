@@ -31,3 +31,7 @@ data/export/
 .idea/
 .DS_Store
 Thumbs.db
+
+# pip 安装过程可能留下的临时文件
+backend/tmp*
+tmp*/
