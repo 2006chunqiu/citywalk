@@ -177,20 +177,79 @@ def select_waypoints(
     target_n: int,
     min_gap_m: float = 200.0,
     max_same_type: int = 2,
+    quota: dict[str, int] | None = None,
 ) -> list[Poi]:
-    """贪心选取途经点：两两间距 ≥200 米，同分类码不超过 2 个。"""
-    chosen: list[Poi] = []
-    type_count: dict[str, int] = {}
+    """贪心选取途经点：两两间距 ≥200 米，同分类码不超过 2 个。
+
+    quota 用于"双线融合"：给不同来源（seed / amap）设下限，
+    例如 {"seed": 2, "amap": 1}。原因是高德大景点评分高（4.7→H=0.94），
+    而小店往往无评分（H=0.5），纯按分数排会把小店全部挤掉，
+    那样"种子库"这一路就等于没起作用。
+
+    两轮策略：
+      第一轮按分数顺序填，某来源配额已满且其他来源还没填够时跳过它；
+      第二轮若还没填满 target_n，忽略配额按分数补齐（宁可要满，不要空）。
+    """
+    if not quota:
+        chosen: list[Poi] = []
+        type_count: dict[str, int] = {}
+        for poi, _score, _detail in ranked:
+            if len(chosen) >= target_n:
+                break
+            if any(haversine_m(poi.xy, c.xy) < min_gap_m for c in chosen):
+                continue
+            if type_count.get(poi.typecode, 0) >= max_same_type:
+                continue
+            chosen.append(poi)
+            type_count[poi.typecode] = type_count.get(poi.typecode, 0) + 1
+        return chosen
+
+    chosen = []
+    type_count = {}
+    need = dict(quota)
+
+    def ok(poi: Poi) -> bool:
+        if any(haversine_m(poi.xy, c.xy) < min_gap_m for c in chosen):
+            return False
+        return type_count.get(poi.typecode, 0) < max_same_type
+
+    def take(poi: Poi) -> None:
+        chosen.append(poi)
+        type_count[poi.typecode] = type_count.get(poi.typecode, 0) + 1
+        need[poi.source] = need.get(poi.source, 0) - 1
+
+    # 第一轮：带配额
     for poi, _score, _detail in ranked:
         if len(chosen) >= target_n:
             break
-        if any(haversine_m(poi.xy, c.xy) < min_gap_m for c in chosen):
+        if not ok(poi):
             continue
-        if type_count.get(poi.typecode, 0) >= max_same_type:
+        src = poi.source
+        if need.get(src, 0) <= 0 and any(v > 0 for k, v in need.items() if k != src):
             continue
-        chosen.append(poi)
-        type_count[poi.typecode] = type_count.get(poi.typecode, 0) + 1
+        take(poi)
+
+    # 第二轮：配额没填够就按分数补齐
+    if len(chosen) < target_n:
+        for poi, _score, _detail in ranked:
+            if len(chosen) >= target_n:
+                break
+            if poi in chosen or not ok(poi):
+                continue
+            take(poi)
+
     return chosen
+
+
+def quota_for(target_n: int, seed_min_ratio: float = 0.4) -> dict[str, int]:
+    """按途经点数量算配额：种子库保底 + 高德至少 1 个。
+
+    4 个点、0.4 比例 → seed 保底 1（向上取整）… 实际给 2，留余量。
+    """
+    seed_min = max(1, int(round(target_n * seed_min_ratio)))
+    if target_n <= 2:
+        return {"seed": 1, "amap": 0}
+    return {"seed": min(seed_min, target_n - 1), "amap": 1}
 
 
 def order_along_line(
@@ -206,9 +265,10 @@ def plan_waypoints(
     target_n: int | None = None,
     min_gap_m: float = 200.0,
     max_same_type: int = 2,
+    quota: dict[str, int] | None = None,
 ) -> tuple[list[Poi], list[tuple[Poi, float, dict[str, float]]]]:
     """一步到位：排序 → 选取 → 沿线排序。返回 (途经点序列, 完整排名)。"""
     ranked = rank(pois, ctx)
     n = target_n or waypoint_target_count(haversine_m(ctx.origin, ctx.destination))
-    chosen = select_waypoints(ranked, n, min_gap_m, max_same_type)
+    chosen = select_waypoints(ranked, n, min_gap_m, max_same_type, quota)
     return order_along_line(chosen, ctx.origin, ctx.destination), ranked

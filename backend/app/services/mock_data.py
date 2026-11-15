@@ -15,9 +15,11 @@ from ..algo.scoring import (
     buffer_radius_m,
     haversine_m,
     plan_waypoints,
+    quota_for,
     waypoint_target_count,
 )
-from .recall import recall
+from ..config import settings
+from .recall import recall_both
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +162,7 @@ def _fit_budget(
     return kept
 
 
-def build_schemes(
+async def build_schemes(
     origin: tuple[float, float],
     destination: tuple[float, float],
     tag_ids: list[str],
@@ -170,11 +172,11 @@ def build_schemes(
     tag_order = tag_order or tag_ids
     straight = haversine_m(origin, destination)
 
-    recalled = recall(origin, destination, list(tag_order))
-    pois = list(recalled.pois)
+    # 双线并行取点：种子库（小点位/人工标签）+ 高德周边（大景点）
+    pois, recalled, recall_meta = await recall_both(origin, destination, list(tag_order))
     if not pois:
         logger.warning(
-            "走廊内无候选（种子库 %d 条），本次退回合成点位：%s -> %s",
+            "两条通道都没有候选（种子库 %d 条），本次退回合成点位：%s -> %s",
             recalled.scanned, origin, destination,
         )
         pois = synthetic_pois(origin, destination)
@@ -202,7 +204,10 @@ def build_schemes(
             avg_stay_minutes=15.0,
             weights=dict(MODE_WEIGHTS[mode]),
         )
-        chosen, ranked = plan_waypoints(pois, ctx, target_n=target_n)
+        chosen, ranked = plan_waypoints(
+            pois, ctx, target_n=target_n,
+            quota=quota_for(target_n, settings.seed_min_ratio),
+        )
         if not chosen:
             continue
 
@@ -277,5 +282,7 @@ def build_schemes(
         "status": "success" if schemes else "fail",
         "validation": {"passed": True, "dropped": 0, "reasons": []},
         "schemes": schemes,
-        "apiCalls": 0,  # 示例实现不调外部接口
+        "apiCalls": 0,
+        # 两条通道的来源分布，便于验收与答辩时解释"点位从哪来"
+        "recall": recall_meta,
     }

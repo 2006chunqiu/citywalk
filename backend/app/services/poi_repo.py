@@ -15,11 +15,18 @@ from functools import lru_cache
 from pathlib import Path
 
 from ..algo.scoring import Poi
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
 # backend/app/services/poi_repo.py -> citywalk/data/poi.csv
 DEFAULT_PATH = Path(__file__).resolve().parents[3] / "data" / "poi.csv"
+
+# 可用 POI_CSV 环境变量切换到新版种子库（例如 data/poi_v2.csv），
+# 不改代码就能换数据，出问题改回环境变量即可回滚。
+if settings.poi_csv:
+    _configured = Path(settings.poi_csv)
+    DEFAULT_PATH = _configured if _configured.is_absolute() else DEFAULT_PATH.parent / _configured.name
 
 FIELDS = (
     "poi_id", "name", "address", "lng", "lat",

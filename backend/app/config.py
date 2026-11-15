@@ -32,5 +32,16 @@ class Settings:
     # 单次生成的外部调用预算（PRD 5.4）
     api_call_budget: int = 45
 
+    # --- 融合召回（双线并行） ---
+    # 种子库文件路径；留空则用 repo 里的 data/poi.csv
+    poi_csv: str = os.getenv("POI_CSV", "")
+    # 高德通道总开关。RECALL_AMAP=0 时退回纯种子库，用于对照与兜底
+    recall_amap_enabled: bool = os.getenv("RECALL_AMAP", "1") != "0"
+    # 走廊中心点个数 / 每点翻页数（3×2=6 次调用）
+    recall_amap_parts: int = int(os.getenv("RECALL_AMAP_PARTS", "3"))
+    recall_amap_max_pages: int = int(os.getenv("RECALL_AMAP_MAX_PAGES", "2"))
+    # 每条方案里种子库点位的保底占比，防止小店被高评分大景点挤掉
+    seed_min_ratio: float = float(os.getenv("SEED_MIN_RATIO", "0.4"))
+
 
 settings = Settings()

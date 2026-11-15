@@ -29,7 +29,7 @@ def _check_distance(origin, destination) -> float:
 @router.post("/generate")
 async def generate(req: GenerateRequest):
     _check_distance(req.origin, req.destination)
-    result = mock_data.build_schemes(
+    result = await mock_data.build_schemes(
         origin=(req.origin.lng, req.origin.lat),
         destination=(req.destination.lng, req.destination.lat),
         tag_ids=req.tagIds,
@@ -49,7 +49,7 @@ async def generate(req: GenerateRequest):
 @router.post("/replan")
 async def replan(req: ReplanRequest):
     _check_distance(req.origin, req.destination)
-    result = mock_data.build_schemes(
+    result = await mock_data.build_schemes(
         origin=(req.origin.lng, req.origin.lat),
         destination=(req.destination.lng, req.destination.lat),
         tag_ids=req.tagIds,

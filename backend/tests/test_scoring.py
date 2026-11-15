@@ -18,10 +18,11 @@ from app.algo.scoring import (  # noqa: E402
     haversine_m,
     order_along_line,
     plan_waypoints,
+    quota_for,
+    rank,
     score_poi,
     select_waypoints,
     waypoint_target_count,
-    rank,
 )
 
 WUDA = (114.3608, 30.5387)      # 武汉大学珞珈门
@@ -177,6 +178,59 @@ def test_mode_weights_change_ranking():
     top_short = rank(nearby, _ctx(weights=MODE_WEIGHTS["shortest"]))[0][0].poi_id
     assert top_max == "far"      # 兴趣最大化：匹配标签的胜出
     assert top_short == "near"   # 最短路线：离得近的胜出
+
+
+def test_quota_for_proportional():
+    assert quota_for(3)["seed"] >= 1
+    assert quota_for(4)["seed"] >= 1
+    assert quota_for(4)["amap"] >= 1
+    assert quota_for(6)["seed"] >= 2
+
+
+def test_quota_keeps_seed_points_when_amap_scores_higher():
+    """高德大景点评分高，纯按分数排会挤掉小店；加了配额必须保住 seed。"""
+    amap_pois = [
+        Poi(f"B0A{i}", f"大景点{i}", 114.3400 + i * 0.004, 30.5450 + i * 0.001,
+            typecode="110200", tag_ids=("history",), rating=4.9, source="amap")
+        for i in range(6)
+    ]
+    seed_pois = [
+        Poi(f"seed{i}", f"小店{i}", 114.3450 + i * 0.003, 30.5520,
+            typecode="050500", tag_ids=("art",), rating=None, source="seed")
+        for i in range(3)
+    ]
+    ctx = _ctx()
+    chosen, _ = plan_waypoints(amap_pois + seed_pois, ctx, target_n=4,
+                               quota=quota_for(4))
+    sources = [p.source for p in chosen]
+    assert sources.count("seed") >= 1, sources
+    assert sources.count("amap") >= 1, sources
+    assert len(chosen) == 4, sources
+
+
+def test_no_quota_keeps_old_behaviour():
+    pois = [
+        Poi("p1", "p1", 114.3520, 30.5402, typecode="140400", tag_ids=("art",),
+            rating=4.6, source="seed"),
+        Poi("p2", "p2", 114.3455, 30.5455, typecode="140300", tag_ids=("art",),
+            rating=4.7, source="amap"),
+        Poi("p3", "p3", 114.3380, 30.5488, typecode="110200", tag_ids=("history",),
+            rating=None, source="seed"),
+    ]
+    chosen, _ = plan_waypoints(pois, _ctx(), target_n=3)
+    assert len(chosen) == 3
+
+
+def test_quota_falls_back_when_source_missing():
+    """某一来源完全没有点时，配额不能把方案卡空。"""
+    codes = ["050500", "140400", "110200", "110100", "140300"]
+    only_seed = [
+        Poi(f"s{i}", f"s{i}", 114.3400 + i * 0.004, 30.5450,
+            typecode=codes[i], tag_ids=("art",), rating=4.0, source="seed")
+        for i in range(5)
+    ]
+    chosen, _ = plan_waypoints(only_seed, _ctx(), target_n=4, quota={"seed": 2, "amap": 2})
+    assert len(chosen) == 4, [p.poi_id for p in chosen]
 
 
 if __name__ == "__main__":

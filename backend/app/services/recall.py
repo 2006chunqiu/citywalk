@@ -127,8 +127,8 @@ def corridor_centers(
 ) -> list[tuple[float, float]]:
     """把起终点连线等分成若干段，返回每段中点。
 
-    留给后续"种子库覆盖不足时调高德周边检索补点"用：补点应该沿走廊撒，
-    而不是以起点为圆心画一个大圆，否则会捞一堆要绕远路的点。
+    给"高德通道"用：补点应该沿走廊撒，而不是以起点为圆心画一个大圆，
+    否则会捞一堆要绕远路的点。
     """
     if parts < 1:
         return []
@@ -142,3 +142,110 @@ def corridor_centers(
             )
         )
     return points
+
+
+async def recall_amap(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    tag_ids: list[str] | tuple[str, ...],
+) -> tuple[list[Poi], dict]:
+    """通道 A：沿走廊调高德周边检索，补种子库覆盖不到的点（多为大景点）。
+
+    调用量固定上限：parts × max_pages = 3 × 2 = 6 次。
+    任何异常都返回空列表，由调用方降级为纯种子库，不中断整次生成。
+    """
+    from ..config import settings
+    from . import amap as amap_api
+    from .tags_data import TAG_INDEX
+
+    meta: dict = {"enabled": settings.recall_amap_enabled, "calls": 0, "matched": 0}
+    if not settings.recall_amap_enabled:
+        return [], meta
+
+    codes = sorted({c for t in tag_ids if t in TAG_INDEX for c in TAG_INDEX[t]["typecodes"]})
+    if not codes:
+        meta["reason"] = "no_typecode"
+        return [], meta
+    types = "|".join(codes)
+
+    straight = haversine_m(origin, destination)
+    radius = int(min(3000.0, max(800.0, buffer_radius_m(straight) * 1.2)))
+
+    # 种子库里已有的点，绝不再从高德通道重复进来（人工标注优先）
+    existing = {p.poi_id for p in poi_repo.all_pois()}
+
+    out: list[Poi] = []
+    for center in corridor_centers(origin, destination, settings.recall_amap_parts):
+        for page in range(1, settings.recall_amap_max_pages + 1):
+            try:
+                items = await amap_api.place_around(
+                    center[0], center[1], types, radius=radius, page_num=page
+                )
+            except Exception as exc:  # noqa: BLE001 - 任何异常都降级，不阻断生成
+                logger.warning("高德召回失败 center=%s page=%d: %s", center, page, exc)
+                break
+            meta["calls"] += 1
+            if not items:
+                break
+            for it in items:
+                pid = (it.get("amapId") or "").strip()
+                if not pid or pid in existing:
+                    continue
+                existing.add(pid)
+                out.append(
+                    Poi(
+                        poi_id=pid,
+                        name=(it.get("name") or "").strip(),
+                        lng=it["lng"],
+                        lat=it["lat"],
+                        typecode=it.get("typecode") or "",
+                        tag_ids=tuple(tag_ids[:1]),
+                        rating=it.get("rating"),
+                        stay_minutes=10,
+                        source="amap",
+                        type_name=it.get("typeName") or "",
+                        address=it.get("address") or "",
+                    )
+                )
+            if len(items) < 25:  # 该中心点已无更多
+                break
+
+    meta["matched"] = len(out)
+    logger.info("高德通道：半径 %dm，调用 %d 次，新增 %d 条", radius, meta["calls"], len(out))
+    return out, meta
+
+
+async def recall_both(
+    origin: tuple[float, float],
+    destination: tuple[float, float],
+    tag_ids: list[str] | tuple[str, ...],
+) -> tuple[list[Poi], "RecallResult", dict]:
+    """双线并行：种子库（同步） + 高德（异步），合并去重后返回。
+
+    合并规则：种子库优先。同一个 POI ID 两边都有时，保留种子库那条，
+    因为它带有人工标签、入选理由与停留时长。
+    """
+    seed_result = recall(origin, destination, tag_ids)
+    amap_pois, amap_meta = await recall_amap(origin, destination, tag_ids)
+
+    merged = list(seed_result.pois)
+    seen = {p.poi_id for p in merged}
+    for poi in amap_pois:
+        if poi.poi_id not in seen:
+            merged.append(poi)
+            seen.add(poi.poi_id)
+
+    meta = {
+        "seed": len(seed_result.pois),
+        "amap": len(amap_pois),
+        "merged": len(merged),
+        "amapCalls": amap_meta.get("calls", 0),
+        "amapEnabled": amap_meta.get("enabled", False),
+        "radiusM": round(seed_result.radius_m, 0),
+        "widened": seed_result.widened,
+    }
+    logger.info(
+        "融合召回：seed=%d amap=%d merged=%d 调用=%d",
+        meta["seed"], meta["amap"], meta["merged"], meta["amapCalls"],
+    )
+    return merged, seed_result, meta
